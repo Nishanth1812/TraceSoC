@@ -1,0 +1,7 @@
+{"source_event_id":"AUTH-001","source_type":"authentication","event_type":"login_failure","event_time":"2026-10-15T09:00:00Z","username":"alice","source_ip":"203.0.113.50","outcome":"failure"}
+{"source_event_id":"AUTH-002","source_type":"authentication","event_type":"login_failure","event_time":"2026-10-15T09:00:10Z","username":"alice","source_ip":"203.0.113.50","outcome":"failure"}
+{"source_event_id":"AUTH-003","source_type":"authentication","event_type":"login_failure","event_time":"2026-10-15T09:00:20Z","username":"alice","source_ip":"203.0.113.50","outcome":"failure"}
+{"source_event_id":"AUTH-004","source_type":"authentication","event_type":"login_success","event_time":"2026-10-15T09:01:00Z","username":"alice","host_id":"ws-07","source_ip":"203.0.113.50","outcome":"success"}
+{"source_event_id":"SESSION-001","source_type":"endpoint","event_type":"privileged_session_started","event_time":"2026-10-15T09:02:00Z","username":"alice","host_id":"ws-07","session_id":"session-S104","outcome":"success"}
+{"source_event_id":"PROC-001","source_type":"endpoint","event_type":"sensitive_process_started","event_time":"2026-10-15T09:03:00Z","username":"alice","host_id":"ws-07","session_id":"session-S104","process_name":"powershell.exe","outcome":"success"}
+{"source_event_id":"NET-001","source_type":"network","event_type":"unusual_outbound_connection","event_time":"2026-10-15T09:04:00Z","username":"alice","host_id":"ws-07","session_id":"session-S104","destination_ip":"198.51.100.24","outcome":"success"}

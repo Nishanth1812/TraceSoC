@@ -1,0 +1,65 @@
+{
+  "scenario_id": "primary-v1",
+  "tenant_id": "demo",
+  "event_count": 7,
+  "expected_source_event_ids": [
+    "AUTH-001",
+    "AUTH-002",
+    "AUTH-003",
+    "AUTH-004",
+    "SESSION-001",
+    "PROC-001",
+    "NET-001"
+  ],
+  "expected_ingestion": {
+    "accepted": 7,
+    "rejected": 0,
+    "duplicates_on_replay": 7
+  },
+  "fingerprint_algorithm": "sha256-v1",
+  "expected_rules": [
+    {
+      "rule_id": "AUTH-BURST-001",
+      "version": "1.0",
+      "evidence": ["AUTH-001", "AUTH-002", "AUTH-003"]
+    },
+    {
+      "rule_id": "AUTH-SUCCESS-AFTER-BURST-001",
+      "version": "1.0",
+      "evidence": ["AUTH-001", "AUTH-002", "AUTH-003", "AUTH-004"]
+    },
+    {
+      "rule_id": "PRIVILEGED-FOLLOW-ON-001",
+      "version": "1.0",
+      "evidence": ["AUTH-004", "SESSION-001", "PROC-001", "NET-001"]
+    }
+  ],
+  "candidate_incident": {
+    "id": "INC-PRIMARY-001",
+    "status": "investigating",
+    "evidence": [
+      "AUTH-001",
+      "AUTH-002",
+      "AUTH-003",
+      "AUTH-004",
+      "SESSION-001",
+      "PROC-001",
+      "NET-001"
+    ]
+  },
+  "entities": [
+    "user:alice",
+    "ip:203.0.113.50",
+    "host:ws-07",
+    "session:session-S104",
+    "process:powershell.exe",
+    "ip:198.51.100.24"
+  ],
+  "response": {
+    "action_type": "revoke_session",
+    "target": "session-S104",
+    "expected_postcondition": {
+      "active": false
+    }
+  }
+}

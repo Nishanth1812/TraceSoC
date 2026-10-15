@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.venv/
+
+# Environment and local services
+.env
+*.log
+postgres-data/
+
+# Frontend
+node_modules/
+.next/
+out/
+
+# Editors and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
