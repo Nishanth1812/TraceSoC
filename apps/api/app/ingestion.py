@@ -34,9 +34,7 @@ def fingerprint_input(event: SourceEvent) -> dict[str, Any]:
         "username": event.username,
         "host_id": event.host_id,
         "source_ip": str(event.source_ip) if event.source_ip is not None else None,
-        "destination_ip": (
-            str(event.destination_ip) if event.destination_ip is not None else None
-        ),
+        "destination_ip": (str(event.destination_ip) if event.destination_ip is not None else None),
         "session_id": event.session_id,
         "process_name": event.process_name,
         "outcome": event.outcome or "unknown",
@@ -105,9 +103,7 @@ def normalize_event(
         username=parsed.username,
         host_id=parsed.host_id,
         source_ip=str(parsed.source_ip) if parsed.source_ip is not None else None,
-        destination_ip=(
-            str(parsed.destination_ip) if parsed.destination_ip is not None else None
-        ),
+        destination_ip=(str(parsed.destination_ip) if parsed.destination_ip is not None else None),
         session_id=parsed.session_id,
         process_name=parsed.process_name,
         outcome=parsed.outcome or "unknown",

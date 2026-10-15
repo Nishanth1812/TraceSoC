@@ -98,17 +98,13 @@ def detect(events: list[dict[str, Any]]) -> list[Detection]:
             and event.get("username")
             and event.get("source_ip")
         ):
-            failed_by_identity.setdefault(
-                (event["username"], event["source_ip"]), []
-            ).append(event)
+            failed_by_identity.setdefault((event["username"], event["source_ip"]), []).append(event)
 
     for (username, source_ip), failures in failed_by_identity.items():
         for index, first in enumerate(failures):
             window_end = _utc(first["event_time"]) + timedelta(minutes=5)
             window = [
-                event
-                for event in failures[index:]
-                if _utc(event["event_time"]) <= window_end
+                event for event in failures[index:] if _utc(event["event_time"]) <= window_end
             ]
             if len(window) >= 3:
                 detections.append(
@@ -139,9 +135,7 @@ def detect(events: list[dict[str, Any]]) -> list[Detection]:
         failures = [
             candidate
             for candidate in failed_by_identity.get((event["username"], event["source_ip"]), [])
-            if success_time - timedelta(minutes=10)
-            <= _utc(candidate["event_time"])
-            < success_time
+            if success_time - timedelta(minutes=10) <= _utc(candidate["event_time"]) < success_time
         ]
         if len(failures) >= 3:
             detections.append(

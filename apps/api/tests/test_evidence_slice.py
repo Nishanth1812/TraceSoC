@@ -89,9 +89,7 @@ def test_primary_fixture_materializes_expected_evidence_slice(client):
         "PROC-001",
         "NET-001",
     ]
-    assert {
-        entity["canonical_key"] for entity in body["entities"]
-    } == {
+    assert {entity["canonical_key"] for entity in body["entities"]} == {
         "user:alice",
         "ip:203.0.113.50",
         "host:ws-07",

@@ -57,12 +57,16 @@ class EvidenceRepository:
 
         created_at = now_utc()
         with self.engine.begin() as connection:
-            previous = connection.execute(
-                sa.select(ingestion_runs).where(
-                    ingestion_runs.c.tenant_id == self.tenant_id,
-                    ingestion_runs.c.idempotency_key == idempotency_key,
+            previous = (
+                connection.execute(
+                    sa.select(ingestion_runs).where(
+                        ingestion_runs.c.tenant_id == self.tenant_id,
+                        ingestion_runs.c.idempotency_key == idempotency_key,
+                    )
                 )
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
             if previous is not None:
                 return self._run_response(connection, previous)
 
@@ -82,9 +86,7 @@ class EvidenceRepository:
             accepted = rejected = duplicates = failed = 0
             for record_number, raw_record in enumerate(records, start=1):
                 source_event_id = (
-                    raw_record.get("source_event_id")
-                    if isinstance(raw_record, dict)
-                    else None
+                    raw_record.get("source_event_id") if isinstance(raw_record, dict) else None
                 )
                 if isinstance(raw_record, ParseFailure):
                     rejected += 1
@@ -161,9 +163,13 @@ class EvidenceRepository:
                     candidate_incident_ids=_json(candidate_incident_ids),
                 )
             )
-            run = connection.execute(
-                sa.select(ingestion_runs).where(ingestion_runs.c.run_id == run_id)
-            ).mappings().one()
+            run = (
+                connection.execute(
+                    sa.select(ingestion_runs).where(ingestion_runs.c.run_id == run_id)
+                )
+                .mappings()
+                .one()
+            )
             return self._run_response(connection, run)
 
     def _insert_error(
@@ -235,9 +241,7 @@ class EvidenceRepository:
         event_values = [event_by_id[event_id] for event_id in event_ids]
         observed_start = min(_aware(event["event_time"]) for event in event_values)
         observed_end = max(_aware(event["event_time"]) for event in event_values)
-        full_sequence = {
-            detection.rule_id for detection in detections
-        } >= {
+        full_sequence = {detection.rule_id for detection in detections} >= {
             "AUTH-SUCCESS-AFTER-BURST-001",
             "PRIVILEGED-FOLLOW-ON-001",
         }
@@ -248,12 +252,16 @@ class EvidenceRepository:
             if full_sequence
             else "Candidate suspicious activity"
         )
-        existing = connection.execute(
-            sa.select(incidents).where(
-                incidents.c.tenant_id == self.tenant_id,
-                incidents.c.correlation_key == correlation_key,
+        existing = (
+            connection.execute(
+                sa.select(incidents).where(
+                    incidents.c.tenant_id == self.tenant_id,
+                    incidents.c.correlation_key == correlation_key,
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         if existing is None:
             prefix = "INC-PRIMARY" if full_sequence else "INC-SIGNAL"
             incident_id = self._next_incident_id(connection, prefix)
@@ -310,13 +318,17 @@ class EvidenceRepository:
                 )
 
         for detection in detections:
-            finding = connection.execute(
-                sa.select(findings).where(
-                    findings.c.incident_id == incident_id,
-                    findings.c.rule_id == detection.rule_id,
-                    findings.c.rule_version == detection.rule_version,
+            finding = (
+                connection.execute(
+                    sa.select(findings).where(
+                        findings.c.incident_id == incident_id,
+                        findings.c.rule_id == detection.rule_id,
+                        findings.c.rule_version == detection.rule_version,
+                    )
                 )
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
             finding_id = finding["finding_id"] if finding else str(uuid4())
             finding_values = {
                 "finding_id": finding_id,
@@ -504,22 +516,30 @@ class EvidenceRepository:
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as connection:
-            run = connection.execute(
-                sa.select(ingestion_runs).where(
-                    ingestion_runs.c.run_id == run_id,
-                    ingestion_runs.c.tenant_id == self.tenant_id,
+            run = (
+                connection.execute(
+                    sa.select(ingestion_runs).where(
+                        ingestion_runs.c.run_id == run_id,
+                        ingestion_runs.c.tenant_id == self.tenant_id,
+                    )
                 )
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
             return self._run_response(connection, run) if run else None
 
     def get_run_by_idempotency_key(self, idempotency_key: str) -> dict[str, Any] | None:
         with self.engine.connect() as connection:
-            run = connection.execute(
-                sa.select(ingestion_runs).where(
-                    ingestion_runs.c.tenant_id == self.tenant_id,
-                    ingestion_runs.c.idempotency_key == idempotency_key,
+            run = (
+                connection.execute(
+                    sa.select(ingestion_runs).where(
+                        ingestion_runs.c.tenant_id == self.tenant_id,
+                        ingestion_runs.c.idempotency_key == idempotency_key,
+                    )
                 )
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
             return self._run_response(connection, run) if run else None
 
     def list_events(
@@ -555,22 +575,25 @@ class EvidenceRepository:
 
     def _event_response(self, event: dict[str, Any]) -> dict[str, Any]:
         return {
-            **{key: event[key] for key in (
-                "event_id",
-                "tenant_id",
-                "source_event_id",
-                "event_fingerprint",
-                "source_type",
-                "event_type",
-                "username",
-                "host_id",
-                "source_ip",
-                "destination_ip",
-                "session_id",
-                "process_name",
-                "outcome",
-                "severity",
-            )},
+            **{
+                key: event[key]
+                for key in (
+                    "event_id",
+                    "tenant_id",
+                    "source_event_id",
+                    "event_fingerprint",
+                    "source_type",
+                    "event_type",
+                    "username",
+                    "host_id",
+                    "source_ip",
+                    "destination_ip",
+                    "session_id",
+                    "process_name",
+                    "outcome",
+                    "severity",
+                )
+            },
             "event_time": _aware(event["event_time"]).isoformat().replace("+00:00", "Z"),
             "ingested_at": _aware(event["ingested_at"]).isoformat().replace("+00:00", "Z"),
             "raw_event": json.loads(event["raw_event"]),
@@ -594,27 +617,34 @@ class EvidenceRepository:
 
     def get_incident(self, incident_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as connection:
-            incident = connection.execute(
-                sa.select(incidents).where(
-                    incidents.c.incident_id == incident_id,
-                    incidents.c.tenant_id == self.tenant_id,
+            incident = (
+                connection.execute(
+                    sa.select(incidents).where(
+                        incidents.c.incident_id == incident_id,
+                        incidents.c.tenant_id == self.tenant_id,
+                    )
                 )
-            ).mappings().first()
+                .mappings()
+                .first()
+            )
             if incident is None:
                 return None
             return self._incident_detail(connection, dict(incident))
 
     def _incident_detail(self, connection: Connection, incident: dict[str, Any]) -> dict[str, Any]:
-        event_rows = [dict(row) for row in connection.execute(
-            sa.select(security_events)
-            .join(incident_events, incident_events.c.event_id == security_events.c.event_id)
-            .where(incident_events.c.incident_id == incident["incident_id"])
-            .order_by(
-                security_events.c.event_time,
-                security_events.c.ingested_at,
-                security_events.c.event_id,
-            )
-        ).mappings()]
+        event_rows = [
+            dict(row)
+            for row in connection.execute(
+                sa.select(security_events)
+                .join(incident_events, incident_events.c.event_id == security_events.c.event_id)
+                .where(incident_events.c.incident_id == incident["incident_id"])
+                .order_by(
+                    security_events.c.event_time,
+                    security_events.c.ingested_at,
+                    security_events.c.event_id,
+                )
+            ).mappings()
+        ]
         finding_rows = connection.execute(
             sa.select(findings)
             .where(findings.c.incident_id == incident["incident_id"])
@@ -623,19 +653,21 @@ class EvidenceRepository:
         finding_output = []
         events_by_id = {event["event_id"]: event for event in event_rows}
         for finding in finding_rows:
-            evidence_ids = list(connection.execute(
-                sa.select(finding_events.c.event_id)
-                .join(
-                    security_events,
-                    security_events.c.event_id == finding_events.c.event_id,
-                )
-                .where(finding_events.c.finding_id == finding["finding_id"])
-                .order_by(
-                    security_events.c.event_time,
-                    security_events.c.ingested_at,
-                    security_events.c.event_id,
-                )
-            ).scalars())
+            evidence_ids = list(
+                connection.execute(
+                    sa.select(finding_events.c.event_id)
+                    .join(
+                        security_events,
+                        security_events.c.event_id == finding_events.c.event_id,
+                    )
+                    .where(finding_events.c.finding_id == finding["finding_id"])
+                    .order_by(
+                        security_events.c.event_time,
+                        security_events.c.ingested_at,
+                        security_events.c.event_id,
+                    )
+                ).scalars()
+            )
             evidence_source_ids = [
                 events_by_id[event_id]["source_event_id"]
                 for event_id in evidence_ids
@@ -661,9 +693,7 @@ class EvidenceRepository:
         incident_output = self._incident_response(incident)
         incident_output["evidence_event_ids"] = event_ids
         incident_output["evidence_source_event_ids"] = [
-            event["source_event_id"]
-            for event in event_rows
-            if event["source_event_id"] is not None
+            event["source_event_id"] for event in event_rows if event["source_event_id"] is not None
         ]
         incident_output["evidence"] = incident_output["evidence_source_event_ids"]
         return {

@@ -9,12 +9,18 @@ from fastapi.responses import JSONResponse
 from .config import get_settings
 from .database import database_is_healthy, engine, initialize_schema
 from .ingestion import ParseFailure
+from .investigation_service import InvestigationError, InvestigationService
 from .repository import MAX_PAGE_SIZE, EvidenceRepository
+from .response_service import ResponseError, ResponseService
 from .schemas.health import HealthResponse
+from .schemas.investigation import InvestigationRequest
+from .schemas.response import ActionDecisionRequest, ResponsePlanRequest
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.1.0")
 repository = EvidenceRepository(engine)
+investigations = InvestigationService(engine)
+responses = ResponseService(engine)
 
 # SQLite is the documented no-service development/test configuration.  The
 # PostgreSQL path remains migration-managed and is never silently replaced.
@@ -34,6 +40,10 @@ class APIError(Exception):
         self.code = code
         self.message = message
         self.details = details or {}
+
+
+def _raise_service_error(error: InvestigationError | ResponseError) -> None:
+    raise APIError(error.status_code, error.code, error.message, error.details) from error
 
 
 @app.exception_handler(APIError)
@@ -279,3 +289,87 @@ def get_incident_findings(incident_id: str) -> dict[str, Any]:
     if findings is None:
         raise APIError(status.HTTP_404_NOT_FOUND, "incident_not_found", "incident was not found")
     return {"incident_id": incident_id, "items": findings}
+
+
+@app.post("/api/v1/incidents/{incident_id}/investigations")
+def start_investigation(
+    incident_id: str, payload: InvestigationRequest | None = None
+) -> dict[str, Any]:
+    provider = payload.provider if payload is not None else settings.ai_provider
+    try:
+        return investigations.start(incident_id, provider_name=provider)
+    except InvestigationError as error:
+        _raise_service_error(error)
+
+
+@app.get("/api/v1/investigations/{run_id}")
+def get_investigation(run_id: str) -> dict[str, Any]:
+    result = investigations.get(run_id)
+    if result is None:
+        raise APIError(
+            status.HTTP_404_NOT_FOUND, "investigation_not_found", "investigation was not found"
+        )
+    return result
+
+
+@app.post("/api/v1/incidents/{incident_id}/response-plans")
+def create_response_plan(incident_id: str, payload: ResponsePlanRequest) -> dict[str, Any]:
+    try:
+        return responses.propose(incident_id, payload)
+    except ResponseError as error:
+        _raise_service_error(error)
+
+
+@app.get("/api/v1/response-actions/{action_id}")
+def get_response_action(action_id: str) -> dict[str, Any]:
+    result = responses.get_action(action_id)
+    if result is None:
+        raise APIError(
+            status.HTTP_404_NOT_FOUND, "response_action_not_found", "response action was not found"
+        )
+    return result
+
+
+@app.post("/api/v1/response-actions/{action_id}/approve")
+def approve_response_action(action_id: str, payload: ActionDecisionRequest) -> dict[str, Any]:
+    try:
+        return responses.approve(action_id, payload)
+    except ResponseError as error:
+        _raise_service_error(error)
+
+
+@app.post("/api/v1/response-actions/{action_id}/reject")
+def reject_response_action(action_id: str, payload: ActionDecisionRequest) -> dict[str, Any]:
+    try:
+        return responses.reject(action_id, payload)
+    except ResponseError as error:
+        _raise_service_error(error)
+
+
+@app.post("/api/v1/response-actions/{action_id}/execute")
+def execute_response_action(
+    action_id: str,
+    request: Request,
+    payload: ActionDecisionRequest,
+) -> dict[str, Any]:
+    idempotency_key = request.headers.get("idempotency-key", "")
+    try:
+        return responses.execute(action_id, payload, idempotency_key)
+    except ResponseError as error:
+        _raise_service_error(error)
+
+
+@app.get("/api/v1/response-actions/{action_id}/verification")
+def verify_response_action(action_id: str) -> dict[str, Any]:
+    try:
+        return responses.verify(action_id)
+    except ResponseError as error:
+        _raise_service_error(error)
+
+
+@app.get("/api/v1/incidents/{incident_id}/audit")
+def get_incident_audit(incident_id: str) -> dict[str, Any]:
+    result = responses.get_audit(incident_id)
+    if result is None:
+        raise APIError(status.HTTP_404_NOT_FOUND, "incident_not_found", "incident was not found")
+    return {"incident_id": incident_id, "items": result}

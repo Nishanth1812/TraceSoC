@@ -9,13 +9,16 @@ response.
 
 The deterministic evidence slice is implemented: JSON/JSONL ingestion produces
 validated canonical events, idempotent fingerprints, evidence-linked findings,
-and candidate incidents through versioned API routes. Frontend, AI, and
-response-action work are outside this slice.
+and candidate incidents through versioned API routes. The analyst workspace is
+available under `apps/web`; the frontend's investigation report and response
+controls are intentionally self-contained mock/simulation states until the
+corresponding backend routes are exposed.
 
 ## Repository layout
 
 ```text
 apps/api/       FastAPI backend
+apps/web/       Next.js analyst workspace (demo fixture or API-backed)
 data/scenarios/ Versioned synthetic security fixtures
 docs/           Product, contract, threat-model, and demo notes
 scripts/        Repeatable validation and developer commands
@@ -32,6 +35,13 @@ The current development container has Python and Node installed, but does not
 have Docker or PostgreSQL. The backend supports PostgreSQL through the normal
 SQLAlchemy/Alembic configuration and supports SQLite through the same
 repository and schema for local tests and development.
+
+## Analyst workspace
+
+The frontend is self-contained and can be run without the backend. See
+[`apps/web/README.md`](apps/web/README.md) for exact install, demo-fixture, API
+configuration, and verification steps. With no API base URL, it opens the
+frozen `primary-v1` incident as an explicitly labeled offline/demo workspace.
 
 ## First checks
 
