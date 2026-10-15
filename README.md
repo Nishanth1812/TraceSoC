@@ -59,6 +59,15 @@ DATABASE_URL=sqlite:///./tracesoc.db uv run uvicorn apps.api.app.main:app --port
 DATABASE_URL=sqlite:///./tracesoc.db uv run alembic upgrade head
 ```
 
+With Docker available, the complete local stack is:
+
+```bash
+docker compose up --build
+```
+
+Then open <http://localhost:3000>. The API is available at
+<http://localhost:8000>.
+
 The equivalent PowerShell setting is
 `$env:DATABASE_URL="sqlite:///./tracesoc.db"`. For PostgreSQL, set
 `DATABASE_URL=postgresql+psycopg://...` and run `uv run alembic upgrade head`.

@@ -6,7 +6,7 @@ COPY pyproject.toml uv.lock README.md ./
 RUN pip install --no-cache-dir uv \
     && uv sync --no-dev --no-install-project
 
-COPY apps ./apps
+COPY apps/api ./apps/api
 COPY scripts ./scripts
 COPY data ./data
 COPY migrations ./migrations
