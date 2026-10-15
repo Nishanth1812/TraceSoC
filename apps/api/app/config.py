@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     schema_revision: str = "bootstrap"
     ai_provider: str = "mock"
     ai_api_key: str | None = None
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     max_payload_bytes: int = 1_048_576
     max_events_per_batch: int = 1000
 

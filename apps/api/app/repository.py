@@ -765,3 +765,62 @@ class EvidenceRepository:
     def incident_findings(self, incident_id: str) -> list[dict[str, Any]] | None:
         detail = self.get_incident(incident_id)
         return detail["findings"] if detail else None
+
+    def incident_graph(self, incident_id: str) -> dict[str, Any] | None:
+        """Return the bounded, evidence-backed entity graph for one incident."""
+
+        with self.engine.connect() as connection:
+            incident = connection.execute(
+                sa.select(incidents.c.incident_id).where(
+                    incidents.c.incident_id == incident_id,
+                    incidents.c.tenant_id == self.tenant_id,
+                )
+            ).scalar_one_or_none()
+            if incident is None:
+                return None
+            detail = self.get_incident(incident_id)
+            entity_ids = {entity["entity_id"] for entity in detail["entities"]}
+            entity_rows = connection.execute(
+                sa.select(entities).where(
+                    entities.c.tenant_id == self.tenant_id,
+                    entities.c.entity_id.in_(entity_ids),
+                )
+            ).mappings()
+            entity_by_id = {row["entity_id"]: dict(row) for row in entity_rows}
+            relationship_rows = connection.execute(
+                sa.select(entity_relationships).where(
+                    entity_relationships.c.incident_id == incident_id,
+                    entity_relationships.c.from_entity_id.in_(entity_ids),
+                    entity_relationships.c.to_entity_id.in_(entity_ids),
+                )
+            ).mappings()
+            source_by_id = {
+                event["event_id"]: event["source_event_id"]
+                for event in detail["events"]
+                if event["source_event_id"]
+            }
+            return {
+                "incident_id": incident_id,
+                "nodes": [
+                    {
+                        "entity_id": row["entity_id"],
+                        "entity_type": row["entity_type"],
+                        "canonical_key": row["canonical_key"],
+                        "display_value": row["display_value"],
+                    }
+                    for row in entity_by_id.values()
+                ],
+                "edges": [
+                    {
+                        "from": row["from_entity_id"],
+                        "to": row["to_entity_id"],
+                        "relationship_type": row["relationship_type"],
+                        "status": row["evidence_status"],
+                        "evidence_event_ids": [
+                            source_by_id.get(event_id, event_id)
+                            for event_id in json.loads(row["evidence_event_ids"])
+                        ],
+                    }
+                    for row in relationship_rows
+                ],
+            }

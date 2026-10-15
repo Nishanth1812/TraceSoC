@@ -5,6 +5,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request, Response, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .database import database_is_healthy, engine, initialize_schema
@@ -18,6 +19,13 @@ from .schemas.response import ActionDecisionRequest, ResponsePlanRequest
 
 settings = get_settings()
 app = FastAPI(title=settings.app_name, version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Accept", "Content-Type", "Idempotency-Key", "X-Request-ID"],
+)
 repository = EvidenceRepository(engine)
 investigations = InvestigationService(engine)
 responses = ResponseService(engine)
@@ -289,6 +297,14 @@ def get_incident_findings(incident_id: str) -> dict[str, Any]:
     if findings is None:
         raise APIError(status.HTTP_404_NOT_FOUND, "incident_not_found", "incident was not found")
     return {"incident_id": incident_id, "items": findings}
+
+
+@app.get("/api/v1/incidents/{incident_id}/graph")
+def get_incident_graph(incident_id: str) -> dict[str, Any]:
+    graph = repository.incident_graph(incident_id)
+    if graph is None:
+        raise APIError(status.HTTP_404_NOT_FOUND, "incident_not_found", "incident was not found")
+    return graph
 
 
 @app.post("/api/v1/incidents/{incident_id}/investigations")

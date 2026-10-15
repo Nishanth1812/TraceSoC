@@ -7,12 +7,10 @@ response.
 
 ## Current status
 
-The deterministic evidence slice is implemented: JSON/JSONL ingestion produces
-validated canonical events, idempotent fingerprints, evidence-linked findings,
-and candidate incidents through versioned API routes. The analyst workspace is
-available under `apps/web`; the frontend's investigation report and response
-controls are intentionally self-contained mock/simulation states until the
-corresponding backend routes are exposed.
+The deterministic evidence slice, constrained mock investigation, and
+simulation-only response workflow are implemented. The analyst workspace is
+available under `apps/web`; it runs against the backend or the checked-in
+offline fixture.
 
 ## Repository layout
 
@@ -28,7 +26,7 @@ scripts/        Repeatable validation and developer commands
 
 - Python 3.11+
 - `uv` 0.13+
-- Node.js 22+ and npm 10+ when the web application is added
+- Node.js 22+ and npm 10+ for the web application
 - Docker Desktop with Compose for PostgreSQL-backed local development
 
 The current development container has Python and Node installed, but does not
@@ -89,6 +87,15 @@ tenant `demo`:
   candidate incidents, findings, raw events, and canonical entities;
 - `GET /api/v1/incidents/{incident_id}/timeline` and `/findings` for bounded
   evidence views.
+- `GET /api/v1/incidents/{incident_id}/graph` for evidence-backed relationships;
+- `POST /api/v1/incidents/{incident_id}/investigations` and
+  `GET /api/v1/investigations/{run_id}` for constrained investigation runs;
+- `POST /api/v1/incidents/{incident_id}/response-plans` for simulation proposals;
+- `POST /api/v1/response-actions/{action_id}/approve`, `/reject`, and
+  `/execute` for backend-enforced response decisions;
+- `GET /api/v1/response-actions/{action_id}/verification` and
+  `GET /api/v1/incidents/{incident_id}/audit` for independent verification and
+  audit history.
 
 The fingerprint is the documented `sha256-v1` compact sorted-key JSON digest.
 The deterministic rules are versioned in the implementation and emit signals
@@ -98,5 +105,11 @@ with event evidence; a fired rule is not represented as proof of compromise.
 
 The implementation roadmap is in
 [`tracesoc_phasewise_project_plan.md`](tracesoc_phasewise_project_plan.md).
-The first implemented backend slice is the deterministic ingestion, detection,
-correlation, and evidence inspection path.
+The implemented backend path is:
+
+```text
+Ingest -> Normalize -> Correlate -> Investigate -> Approve -> Simulate -> Verify
+```
+
+All response actions are local simulations, and the mock investigator remains
+available without an AI provider key.

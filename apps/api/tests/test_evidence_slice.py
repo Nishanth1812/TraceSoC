@@ -97,6 +97,11 @@ def test_primary_fixture_materializes_expected_evidence_slice(client):
         "process:powershell.exe",
         "ip:198.51.100.24",
     }
+    graph = client.get("/api/v1/incidents/INC-PRIMARY-001/graph")
+    assert graph.status_code == 200
+    assert len(graph.json()["nodes"]) == 6
+    assert graph.json()["edges"]
+    assert all(edge["evidence_event_ids"] for edge in graph.json()["edges"])
 
 
 def test_duplicate_fingerprint_is_suppressed_and_idempotency_replays_run(client):
