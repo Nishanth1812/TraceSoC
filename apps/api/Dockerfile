@@ -9,6 +9,8 @@ RUN pip install --no-cache-dir uv \
 COPY apps ./apps
 COPY scripts ./scripts
 COPY data ./data
+COPY migrations ./migrations
+COPY alembic.ini ./alembic.ini
 
 EXPOSE 8000
 

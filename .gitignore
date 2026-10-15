@@ -18,6 +18,7 @@ postgres-data/
 node_modules/
 .next/
 out/
+*.tsbuildinfo
 
 # Editors and OS files
 .idea/
