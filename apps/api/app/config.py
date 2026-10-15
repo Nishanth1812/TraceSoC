@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     schema_revision: str = "bootstrap"
     ai_provider: str = "mock"
     ai_api_key: str | None = None
+    max_payload_bytes: int = 1_048_576
+    max_events_per_batch: int = 1000
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -7,9 +7,10 @@ response.
 
 ## Current status
 
-The repository is in the bootstrap stage. The frozen scenario contracts and
-the initial FastAPI health service are being built before ingestion and
-detection are added.
+The deterministic evidence slice is implemented: JSON/JSONL ingestion produces
+validated canonical events, idempotent fingerprints, evidence-linked findings,
+and candidate incidents through versioned API routes. Frontend, AI, and
+response-action work are outside this slice.
 
 ## Repository layout
 
@@ -28,9 +29,9 @@ scripts/        Repeatable validation and developer commands
 - Docker Desktop with Compose for PostgreSQL-backed local development
 
 The current development container has Python and Node installed, but does not
-have Docker or PostgreSQL. The backend tests therefore use the deterministic
-health contract and report the database-backed check as an environment gap
-until Docker is available.
+have Docker or PostgreSQL. The backend supports PostgreSQL through the normal
+SQLAlchemy/Alembic configuration and supports SQLite through the same
+repository and schema for local tests and development.
 
 ## First checks
 
@@ -41,6 +42,19 @@ uv run pytest
 uv run python scripts/validate_scenario.py
 ```
 
+To run the evidence slice without PostgreSQL, use a SQLite URL. The tables are
+created automatically for SQLite when the API starts; PostgreSQL remains
+migration-managed:
+
+```bash
+DATABASE_URL=sqlite:///./tracesoc.db uv run uvicorn apps.api.app.main:app --port 8000
+DATABASE_URL=sqlite:///./tracesoc.db uv run alembic upgrade head
+```
+
+The equivalent PowerShell setting is
+`$env:DATABASE_URL="sqlite:///./tracesoc.db"`. For PostgreSQL, set
+`DATABASE_URL=postgresql+psycopg://...` and run `uv run alembic upgrade head`.
+
 To run the API locally after dependencies are installed:
 
 ```bash
@@ -49,11 +63,30 @@ curl http://localhost:8000/api/v1/health
 ```
 
 The health endpoint is expected to report a degraded database status until a
-PostgreSQL instance is available.
+configured database instance is available. Its response contract is unchanged.
+
+## Deterministic evidence API
+
+Ingestion requires an `Idempotency-Key` header and uses the fixed contract
+tenant `demo`:
+
+- `POST /api/v1/events/ingest` with `{ "events": [...] }` or a JSON array;
+- `POST /api/v1/events/upload` with newline-delimited JSON;
+- `GET /api/v1/ingestion-runs/{run_id}` for accepted, rejected, duplicate,
+  failed, and record-level error counts;
+- `GET /api/v1/events` for bounded ordered event inspection;
+- `GET /api/v1/incidents` and `GET /api/v1/incidents/{incident_id}` for
+  candidate incidents, findings, raw events, and canonical entities;
+- `GET /api/v1/incidents/{incident_id}/timeline` and `/findings` for bounded
+  evidence views.
+
+The fingerprint is the documented `sha256-v1` compact sorted-key JSON digest.
+The deterministic rules are versioned in the implementation and emit signals
+with event evidence; a fired rule is not represented as proof of compromise.
 
 ## Build plan
 
 The implementation roadmap is in
 [`tracesoc_phasewise_project_plan.md`](tracesoc_phasewise_project_plan.md).
-The first feature slice freezes the demo scenario and locks the contracts;
-event ingestion is the next implementation phase.
+The first implemented backend slice is the deterministic ingestion, detection,
+correlation, and evidence inspection path.

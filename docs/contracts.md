@@ -13,6 +13,12 @@ and contract tests.
 - AI provider: `mock` by default; a real provider is optional.
 - Response mode: simulation only.
 
+The production persistence target remains PostgreSQL 16 through SQLAlchemy and
+Alembic. The deterministic backend also supports an explicit SQLite URL
+(`sqlite:///...` or `sqlite:///:memory:`) for local tests and development using
+the same repository and table model; this is a deployment configuration choice
+and does not change the event, fingerprint, or API contracts.
+
 ## Canonical event
 
 Every source adapter produces a canonical event before detection runs.
