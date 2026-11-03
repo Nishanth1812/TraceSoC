@@ -77,7 +77,7 @@ export async function fetchIncidentData(
     detail.entities.find((entity) => entity.entity_type === "session")
       ?.display_value ??
     detail.events.find((event) => event.session_id)?.session_id ??
-    "session not identified";
+    "";
   return {
     ...DEMO_INCIDENT,
     incident: detail.incident,
@@ -233,8 +233,8 @@ function buildApiReport(detail: ApiIncidentDetail): IncidentData["report"] {
       "The live incident contract does not include independent identity confirmation or endpoint memory evidence.",
     ],
     limitations: [
-      "This report is a frontend evidence summary until an investigation run endpoint is connected.",
-      "No response action is sent by this UI yet; controls are simulation states.",
+      "This is a frontend evidence summary; run the mock investigation for a cited report.",
+      "Response actions affect simulated state only.",
     ],
   };
 }

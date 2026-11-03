@@ -39,4 +39,43 @@ inactive.
 7. Review the response rationale, risk, rollback, and postcondition.
 8. Approve and execute the simulation.
 9. Verify the session state independently.
-10. Repeat with the benign or failed-verification variant.
+10. Show the benign or failed-verification comparison below.
+
+## Comparisons and evaluation
+
+The versioned `benign-v1` fixture contains one successful login. On a clean
+database, upload `data/scenarios/benign-v1/events.jsonl` to
+`POST /api/v1/events/upload` with a unique `Idempotency-Key`. It should accept
+one event and create no candidate incidents, as recorded in its `expected.json`.
+The primary fixture and benign fixture should be run separately when comparing
+incident counts; the primary incident remains in a database after ingestion.
+
+The failed-verification comparison is automated rather than a UI control. The
+test executes an approved simulated revocation, changes the local simulated
+session back to active, and checks that independent verification returns
+`verification_failed` and the incident remains `investigating`. It changes no
+external system. Run both comparisons and the primary scenario with:
+
+```bash
+uv run pytest apps/api/tests/test_evidence_slice.py apps/api/tests/test_investigation_response.py
+```
+
+The suite also checks duplicate ingestion, ordering, malformed records,
+evidence references, provider failure, and response approval and replay.
+Each test uses its own in-memory SQLite database. These synthetic cases show
+whether the specified examples behave as expected; they do not establish
+real-world detection accuracy, security assurance, or production readiness.
+
+## Recovery and limits
+
+- If the API workspace shows no incidents, check the API connection and seed
+  the primary fixture using the root README instructions, then refresh.
+- If the stack cannot start, the offline fixture remains available in the web
+  workspace. It demonstrates local UI states without persisting API actions.
+- Resetting the Compose database removes all data in that database volume;
+  follow the root README reset instructions only for a disposable demo.
+- The investigator is a deterministic mock. Response actions modify only local
+  simulated state, and signals should not be presented as proof of compromise.
+- The fixed `analyst-demo` actor is not authentication or access control. The
+  application is a local demonstration and is not safe to expose as a
+  production security product.

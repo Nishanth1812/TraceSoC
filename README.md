@@ -29,10 +29,8 @@ scripts/        Repeatable validation and developer commands
 - Node.js 22+ and npm 10+ for the web application
 - Docker Desktop with Compose for PostgreSQL-backed local development
 
-The current development container has Python and Node installed, but does not
-have Docker or PostgreSQL. The backend supports PostgreSQL through the normal
-SQLAlchemy/Alembic configuration and supports SQLite through the same
-repository and schema for local tests and development.
+The backend supports PostgreSQL through SQLAlchemy/Alembic and SQLite through
+the same repository and schema for local tests and development.
 
 ## Analyst workspace
 
@@ -66,7 +64,24 @@ docker compose up --build
 ```
 
 Then open <http://localhost:3000>. The API is available at
-<http://localhost:8000>.
+<http://localhost:8000>. Compose applies database migrations before starting
+the API. Seed the primary scenario from the repository root:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/events/upload \
+  -H "Idempotency-Key: primary-v1" \
+  -H "Content-Type: application/x-ndjson" \
+  --data-binary '@data/scenarios/primary-v1/events.jsonl'
+```
+
+In PowerShell, use `curl.exe` in place of `curl` and put the command on one
+line. Refresh the workspace to see the incident. Repeating the request is
+safe; its idempotency key returns the original ingestion run.
+
+To reset the demo, `docker compose down -v` removes the Compose database volume
+and **all data in it**. Start the stack and seed it again afterwards. For a
+SQLite demo, stop the API and remove only the demo database file you created,
+then restart the API and repeat the seed request.
 
 The equivalent PowerShell setting is
 `$env:DATABASE_URL="sqlite:///./tracesoc.db"`. For PostgreSQL, set
@@ -122,3 +137,6 @@ Ingest -> Normalize -> Correlate -> Investigate -> Approve -> Simulate -> Verify
 
 All response actions are local simulations, and the mock investigator remains
 available without an AI provider key.
+
+For the walkthrough, comparison scenarios, recovery steps, and security
+limitations, see [`docs/demo-scenario.md`](docs/demo-scenario.md).

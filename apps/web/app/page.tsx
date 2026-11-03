@@ -14,7 +14,6 @@ import {
   Database,
   Eye,
   FileText,
-  Filter,
   Globe2,
   Layers3,
   Loader2,
@@ -312,7 +311,7 @@ function SourceBanner({
         <strong>
           {mode === "demo"
             ? "OFFLINE / DEMO FIXTURE"
-            : "LIVE API / READ-ONLY DATA"}
+            : "LIVE API / SIMULATED RESPONSE"}
         </strong>
         <span>
           {mode === "demo"
@@ -396,12 +395,14 @@ function ErrorState({ error, onDemo }: { error: string; onDemo: () => void }) {
 
 function IncidentRail({
   incidents,
+  data,
   selectedId,
   onSelect,
   search,
   setSearch,
 }: {
   incidents: Incident[];
+  data: IncidentData;
   selectedId: string;
   onSelect: (id: string) => void;
   search: string;
@@ -422,12 +423,6 @@ function IncidentRail({
             <span>{incidents.length.toString().padStart(2, "0")}</span>
           </h2>
         </div>
-        <button
-          className="icon-button icon-button--soft"
-          aria-label="Filter incidents"
-        >
-          <Filter size={15} />
-        </button>
       </div>
       <label className="search-field">
         <Search size={15} />
@@ -437,10 +432,6 @@ function IncidentRail({
           placeholder="Search cases"
         />
       </label>
-      <div className="queue-filter">
-        <span>Open cases</span>
-        <ChevronDown size={14} />
-      </div>
       <div className="incident-list">
         {filtered.length ? (
           filtered.map((incident) => (
@@ -476,12 +467,12 @@ function IncidentRail({
       </div>
       <div className="rail-footer">
         <div>
-          <span className="rail-footer__number">07</span>
+          <span className="rail-footer__number">{data.events.length}</span>
           <span>evidence records</span>
         </div>
         <div>
-          <span className="rail-footer__number">03</span>
-          <span>active rules</span>
+          <span className="rail-footer__number">{data.findings.length}</span>
+          <span>findings</span>
         </div>
       </div>
     </aside>
@@ -587,14 +578,9 @@ function Timeline({
         eyebrow="Evidence stream"
         title="Timeline"
         copy="Ordered by event time, then ingestion time, then event ID."
-        action={
-          <button className="button button--quiet button--small">
-            <Filter size={14} /> All sources
-          </button>
-        }
       />
       <div className="timeline-list">
-        {data.events.map((event, index) => (
+        {data.events.map((event) => (
           <button
             className={`timeline-event ${selectedId === event.event_id ? "is-selected" : ""}`}
             key={event.event_id}
@@ -603,7 +589,9 @@ function Timeline({
             <div className="timeline-event__time">
               <strong>{formatTime(event.event_time)}</strong>
               <span>
-                +{index === 0 ? "00" : String(index * 10).padStart(2, "0")}s
+                +{Math.max(0, Math.round(
+                  (Date.parse(event.event_time) - Date.parse(data.events[0].event_time)) / 1000,
+                ))}s
               </span>
             </div>
             <div className="timeline-event__track">
@@ -1087,16 +1075,20 @@ const responseSteps: Array<{
   { key: "awaiting_approval", label: "Approval", note: "analyst decision" },
   { key: "approved", label: "Approved", note: "ready to simulate" },
   { key: "executing", label: "Executing", note: "revoke session" },
-  { key: "verified", label: "Verified", note: "active = false" },
+  { key: "verified", label: "Verification", note: "check postcondition" },
 ];
 
 function ResponsePanel({
   data,
   state,
+  error,
+  busy,
   onAdvance,
 }: {
   data: IncidentData;
   state: ResponseState;
+  error: string;
+  busy: boolean;
   onAdvance: () => void;
 }) {
   const activeIndex =
@@ -1141,7 +1133,7 @@ function ResponsePanel({
     verified: {
       title: "Response verified",
       description:
-        "The independent verifier observed session-S104 with active = false.",
+        `The independent verifier observed ${data.response.target} with active = false.`,
       button: "Verified",
     },
     verification_failed: {
@@ -1213,8 +1205,8 @@ function ResponsePanel({
             <span className="eyebrow">Allowlisted action</span>
             <h3>Revoke session</h3>
             <p>
-              Target <code>{data.response.target}</code> · expected
-              postcondition <code>active = false</code>
+              Target <code>{data.response.target || "not identified"}</code> ·
+              expected postcondition <code>active = false</code>
             </p>
           </div>
         </div>
@@ -1227,16 +1219,22 @@ function ResponsePanel({
           </div>
           <div>
             <span>Operational impact</span>
-            <p>End one session for alice on ws-07.</p>
+            <p>End one session for the affected user in the simulation.</p>
           </div>
           <div>
             <span>Rollback</span>
             <p>Simulation state can be reset from the fixture.</p>
           </div>
         </div>
+        {error && <p role="alert">{error}</p>}
+        {!data.response.target && (
+          <p>No session was identified for this incident.</p>
+        )}
         <button
           className={`button ${state === "verified" ? "button--success" : "button--primary"}`}
           disabled={
+            busy ||
+            !data.response.target ||
             state === "executing" ||
             state === "verified" ||
             state === "verification_failed" ||
@@ -1253,7 +1251,7 @@ function ResponsePanel({
           ) : (
             <ArrowUpRight size={15} />
           )}
-          {copy.button}
+          {busy ? "Working…" : copy.button}
         </button>
       </div>
     </section>
@@ -1293,6 +1291,9 @@ function Dashboard({
   const [responseAction, setResponseAction] = useState<ResponseAction | null>(
     null,
   );
+  const [responseError, setResponseError] = useState("");
+  const [responseBusy, setResponseBusy] = useState(false);
+  const responsePending = useRef(false);
   const reportRef = useRef<HTMLDivElement>(null);
   const selectedEvent =
     data.events.find((event) => event.event_id === selectedEventId) ??
@@ -1324,6 +1325,10 @@ function Dashboard({
   };
   const advanceResponse = async () => {
     if (mode === "api") {
+      if (responsePending.current) return;
+      responsePending.current = true;
+      setResponseBusy(true);
+      setResponseError("");
       try {
         if (responseState === "proposed") {
           setResponseAction(await createResponsePlan(data));
@@ -1344,8 +1349,14 @@ function Dashboard({
               : current,
           );
         }
-      } catch {
-        setResponseState("inconclusive");
+      } catch (caught) {
+        if (responseState === "approved") setResponseState("approved");
+        setResponseError(
+          caught instanceof Error ? caught.message : "Response request failed.",
+        );
+      } finally {
+        responsePending.current = false;
+        setResponseBusy(false);
       }
       return;
     }
@@ -1370,14 +1381,10 @@ function Dashboard({
               </span>
               <h1>{data.incident.title}</h1>
               <p>
-                Suspicious authentication sequence with privileged follow-on
-                activity across one user, host, and session.
+                Review the stored evidence, findings, and simulated response for this incident.
               </p>
             </div>
             <div className="case-header__actions">
-              <button className="button button--quiet button--small">
-                <FileText size={14} /> Export view
-              </button>
               <button
                 className="button button--primary button--small"
                 onClick={() =>
@@ -1405,31 +1412,34 @@ function Dashboard({
               <Database size={14} /> {data.incident.tenant_id} tenant
             </span>
             <span className="case-header__confidence">
-              <span className="confidence-ring">HI</span> confidence category:{" "}
+              <span className="confidence-ring">
+                {data.incident.confidence.slice(0, 2).toUpperCase()}
+              </span>{" "}
+              confidence category:{" "}
               {data.incident.confidence}
             </span>
           </div>
         </div>
         <div className="summary-strip">
           <div>
-            <span className="summary-strip__value">07</span>
+            <span className="summary-strip__value">{data.events.length}</span>
             <span className="summary-strip__label">
               linked evidence records
             </span>
           </div>
           <div>
-            <span className="summary-strip__value">03</span>
+            <span className="summary-strip__value">{data.findings.length}</span>
             <span className="summary-strip__label">deterministic findings</span>
           </div>
           <div>
-            <span className="summary-strip__value">06</span>
+            <span className="summary-strip__value">{data.entities.length}</span>
             <span className="summary-strip__label">bounded entities</span>
           </div>
           <div>
             <span className="summary-strip__value summary-strip__value--amber">
-              01
+              {responseAction || (mode === "demo" && responseState !== "proposed") ? 1 : 0}
             </span>
-            <span className="summary-strip__label">response proposal</span>
+            <span className="summary-strip__label">current response proposal</span>
           </div>
           <div className="summary-strip__end">
             <span className="summary-strip__live">
@@ -1496,6 +1506,8 @@ function Dashboard({
         <ResponsePanel
           data={data}
           state={responseState}
+          error={responseError}
+          busy={responseBusy}
           onAdvance={advanceResponse}
         />
         <footer className="page-footer">
@@ -1508,6 +1520,7 @@ function Dashboard({
       </main>
       <IncidentRail
         incidents={incidents}
+        data={data}
         selectedId={selectedId}
         onSelect={onSelect}
         search={search}

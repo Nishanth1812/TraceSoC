@@ -160,7 +160,7 @@ class ResponseService:
             )
         now = _now()
         with self.engine.begin() as connection:
-            action = self._action(connection, action_id)
+            action = self._action(connection, action_id, lock=True)
             self._require_version(action, request.action_version)
             existing_execution = (
                 connection.execute(
@@ -211,16 +211,26 @@ class ResponseService:
                 "action": self.action_type,
                 "postcondition_written": True,
             }
-            connection.execute(
-                sa.insert(response_executions).values(
-                    execution_id=execution_id,
-                    tenant_id=self.tenant_id,
-                    action_id=action_id,
-                    idempotency_key=idempotency_key,
-                    response_json=_json(execution_result),
-                    created_at=now,
+            try:
+                connection.execute(
+                    sa.insert(response_executions).values(
+                        execution_id=execution_id,
+                        tenant_id=self.tenant_id,
+                        action_id=action_id,
+                        idempotency_key=idempotency_key,
+                        response_json=_json(execution_result),
+                        created_at=now,
+                    )
                 )
-            )
+            except sa.exc.IntegrityError as error:
+                diagnostic = getattr(error.orig, "diag", None)
+                if getattr(diagnostic, "constraint_name", None) != "uq_response_execution_idempotency":
+                    raise
+                raise ResponseError(
+                    409,
+                    "idempotency_key_reused",
+                    "the idempotency key belongs to another response action",
+                ) from error
             connection.execute(
                 sa.update(response_actions)
                 .where(response_actions.c.action_id == action_id)
@@ -252,7 +262,7 @@ class ResponseService:
     def verify(self, action_id: str) -> dict[str, Any]:
         now = _now()
         with self.engine.begin() as connection:
-            action = self._action(connection, action_id)
+            action = self._action(connection, action_id, lock=True)
             if action["status"] not in {
                 "succeeded",
                 "verified",
@@ -344,7 +354,7 @@ class ResponseService:
         actor = self._require_actor(request.actor_id)
         now = _now()
         with self.engine.begin() as connection:
-            action = self._action(connection, action_id)
+            action = self._action(connection, action_id, lock=True)
             self._require_version(action, request.action_version)
             if action["status"] not in {"proposed", "awaiting_approval"}:
                 raise ResponseError(
@@ -406,14 +416,17 @@ class ResponseService:
             raise ResponseError(404, "incident_not_found", "incident was not found")
         return dict(row) if row is not None else None
 
-    def _action(self, connection, action_id: str) -> dict[str, Any]:
+    def _action(self, connection, action_id: str, *, lock: bool = False) -> dict[str, Any]:
+        if lock and connection.dialect.name == "sqlite":
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+        query = sa.select(response_actions).where(
+            response_actions.c.action_id == action_id,
+            response_actions.c.tenant_id == self.tenant_id,
+        )
+        if lock:
+            query = query.with_for_update()
         row = (
-            connection.execute(
-                sa.select(response_actions).where(
-                    response_actions.c.action_id == action_id,
-                    response_actions.c.tenant_id == self.tenant_id,
-                )
-            )
+            connection.execute(query)
             .mappings()
             .first()
         )

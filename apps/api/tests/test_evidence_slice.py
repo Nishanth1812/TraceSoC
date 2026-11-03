@@ -167,23 +167,15 @@ def test_out_of_order_submission_reconstructs_event_timeline(client):
 
 
 def test_benign_unusual_login_is_stored_without_candidate_compromise(client):
-    benign = [
-        {
-            "source_event_id": "BENIGN-001",
-            "source_type": "authentication",
-            "event_type": "login_success",
-            "event_time": "2026-10-15T12:00:00-04:00",
-            "username": "alice",
-            "source_ip": "198.51.100.10",
-            "outcome": "success",
-        }
-    ]
+    scenario = ROOT / "data" / "scenarios" / "benign-v1"
+    benign = [json.loads(line) for line in (scenario / "events.jsonl").read_text().splitlines() if line.strip()]
+    expected = json.loads((scenario / "expected.json").read_text())
 
     result = ingest(client, benign, "benign")
 
-    assert result["accepted"] == 1
+    assert result["accepted"] == expected["accepted"]
     assert client.get("/api/v1/events").json()["items"][0]["event_time"] == "2026-10-15T16:00:00Z"
-    assert client.get("/api/v1/incidents").json()["total"] == 0
+    assert client.get("/api/v1/incidents").json()["total"] == expected["candidate_incidents"]
 
 
 def test_failed_login_burst_stays_a_low_confidence_signal_without_success(client):
