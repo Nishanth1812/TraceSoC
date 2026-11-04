@@ -3,30 +3,21 @@
 import {
   Activity,
   AlertTriangle,
-  ArrowUpRight,
   Check,
   CheckCircle2,
   ChevronDown,
-  ChevronRight,
-  CircleDot,
-  Clock3,
-  Crosshair,
-  Database,
-  Eye,
-  FileText,
   Globe2,
-  Layers3,
   Loader2,
   LockKeyhole,
   Monitor,
-  Network,
+  Moon,
   Play,
   Radar,
   RefreshCw,
   Search,
-  Server,
   ShieldAlert,
   ShieldCheck,
+  Sun,
   Terminal,
   UserRound,
   WifiOff,
@@ -34,10 +25,10 @@ import {
 } from "lucide-react";
 import {
   useEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 
@@ -61,13 +52,14 @@ import type {
   Incident,
   IncidentData,
   InvestigationStatus,
-  Relationship,
   ResponseAction,
   ResponseState,
 } from "@/lib/types";
 
 type LoadState = "loading" | "ready" | "empty" | "error";
 type EvidenceView = "normalized" | "raw";
+type PanelTab = "evidence" | "entities" | "report" | "response";
+type Tone = "neutral" | "amber" | "blue" | "green" | "red";
 
 const INCIDENT_ID = "INC-PRIMARY-001";
 
@@ -79,740 +71,481 @@ const iconForEntity: Record<Entity["entity_type"], typeof UserRound> = {
   process: Terminal,
 };
 
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-    timeZone: "UTC",
-  }).format(new Date(value));
-}
+const formatter = (options: Intl.DateTimeFormatOptions) =>
+  new Intl.DateTimeFormat("en-GB", { ...options, timeZone: "UTC" });
+const timeFormat = formatter({
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+});
+const dateFormat = formatter({ day: "2-digit", month: "short", year: "numeric" });
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(value));
-}
+const formatTime = (value: string) => timeFormat.format(new Date(value));
+const formatDate = (value: string) => dateFormat.format(new Date(value));
 
 function humanize(value: string) {
-  return value
-    .replaceAll("_", " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const text = value.replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function getSourceEvent(event: EventRecord, sourceId: string) {
+function matchesSource(event: EventRecord, sourceId: string) {
   return event.source_event_id === sourceId || event.event_id === sourceId;
 }
 
-function AppShell({
-  children,
-  mode,
-  onModeChange,
-}: {
-  children: ReactNode;
-  mode: DataMode;
-  onModeChange: () => void;
-}) {
-  const goTo = (id: string) =>
-    document
-      .getElementById(id)
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
-  return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand-lockup">
-          <div className="brand-mark">
-            <Radar size={19} strokeWidth={2.5} />
-          </div>
-          <div>
-            <strong>TraceSOC</strong>
-            <span>evidence workspace</span>
-          </div>
-        </div>
-        <div className="tenant-switcher">
-          <div className="tenant-icon">
-            <Database size={15} />
-          </div>
-          <div>
-            <span>Tenant</span>
-            <strong>demo</strong>
-          </div>
-          <ChevronDown size={14} className="muted-icon" />
-        </div>
-        <nav className="sidebar-nav" aria-label="Workspace">
-          <NavLabel>Workspace</NavLabel>
-          <NavItem
-            icon={<Layers3 size={16} />}
-            label="Case queue"
-            active
-            onClick={() => goTo("overview")}
-            count="01"
-          />
-          <NavItem
-            icon={<Activity size={16} />}
-            label="Activity stream"
-            onClick={() => goTo("timeline")}
-          />
-          <NavLabel>Inspect</NavLabel>
-          <NavItem
-            icon={<Clock3 size={16} />}
-            label="Evidence timeline"
-            onClick={() => goTo("timeline")}
-          />
-          <NavItem
-            icon={<Network size={16} />}
-            label="Entity relationships"
-            onClick={() => goTo("relationships")}
-          />
-          <NavItem
-            icon={<FileText size={16} />}
-            label="Investigation report"
-            onClick={() => goTo("report")}
-          />
-          <NavLabel>Respond</NavLabel>
-          <NavItem
-            icon={<ShieldAlert size={16} />}
-            label="Response plan"
-            onClick={() => goTo("response")}
-          />
-        </nav>
-        <div className="sidebar-footer">
-          <button
-            className="mode-switch"
-            onClick={onModeChange}
-            title={
-              mode === "demo"
-                ? "Configure an API base URL to connect real data"
-                : "Use the local demo fixture"
-            }
-          >
-            {mode === "demo" ? <WifiOff size={15} /> : <Activity size={15} />}
-            <span>{mode === "demo" ? "Offline fixture" : "Live API"}</span>
-            <span className="mode-dot" />
-          </button>
-          <div className="analyst-chip">
-            <div className="avatar">AD</div>
-            <div>
-              <strong>analyst-demo</strong>
-              <span>Local analyst</span>
-            </div>
-            <ChevronRight size={14} />
-          </div>
-        </div>
-      </aside>
-      <div className="workspace">
-        <header className="topbar">
-          <div className="breadcrumbs">
-            <span>Workspace</span>
-            <ChevronRight size={14} />
-            <strong>Incident review</strong>
-          </div>
-          <div className="topbar-actions">
-            <span className="utc-label">
-              <CircleDot size={10} /> All times UTC
-            </span>
-            <button
-              className="icon-button"
-              aria-label="Refresh view"
-              onClick={() => window.location.reload()}
-            >
-              <RefreshCw size={16} />
-            </button>
-            <div className="topbar-avatar">AD</div>
-          </div>
-        </header>
-        {children}
-      </div>
-    </div>
-  );
+function seconds(from: string, to: string) {
+  return Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 1000));
 }
 
-function NavLabel({ children }: { children: ReactNode }) {
-  return <div className="nav-label">{children}</div>;
+function duration(total: number) {
+  return total >= 60
+    ? `${Math.floor(total / 60)} min${total % 60 ? ` ${total % 60} s` : ""}`
+    : `${total} s`;
 }
 
-function NavItem({
-  icon,
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  icon: ReactNode;
-  label: string;
-  count?: string;
-  active?: boolean;
-  onClick: () => void;
-}) {
+function ThemeToggle() {
+  const [theme, setTheme] = useState<"light" | "dark" | null>(null);
+  useEffect(() => {
+    const read = () =>
+      setTheme(document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+    read();
+    // Follow the OS only while the analyst has not picked a theme themselves.
+    const media = matchMedia("(prefers-color-scheme: dark)");
+    const onSystem = () => {
+      if (!localStorage.getItem("tracesoc-theme")) {
+        document.documentElement.dataset.theme = media.matches ? "dark" : "light";
+        read();
+      }
+    };
+    media.addEventListener("change", onSystem);
+    return () => media.removeEventListener("change", onSystem);
+  }, []);
+  const next = theme === "dark" ? "light" : "dark";
   return (
     <button
-      className={`nav-item ${active ? "is-active" : ""}`}
-      onClick={onClick}
+      className="icon-button"
+      aria-label={`Switch to ${next} theme`}
+      title={`Switch to ${next} theme`}
+      onClick={() => {
+        document.documentElement.dataset.theme = next;
+        localStorage.setItem("tracesoc-theme", next);
+        setTheme(next);
+      }}
     >
-      {icon}
-      <span>{label}</span>
-      {count && <em>{count}</em>}
+      {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
     </button>
   );
 }
 
-function StatusPill({
-  children,
-  tone = "neutral",
-  dot = false,
-}: {
-  children: ReactNode;
-  tone?: "neutral" | "amber" | "cyan" | "green" | "red" | "blue";
-  dot?: boolean;
-}) {
-  return (
-    <span className={`status-pill status-pill--${tone}`}>
-      {dot && <span className="status-dot" />}
-      {children}
-    </span>
-  );
+function Tag({ tone = "neutral", children }: { tone?: Tone; children: ReactNode }) {
+  return <span className={`tag tag--${tone}`}>{children}</span>;
 }
 
-function SourceBanner({
+/* ------------------------------------------------------------------ shell */
+
+function AppShell({
+  children,
   mode,
-  error,
-  onDemo,
+  switcher,
+  onModeChange,
 }: {
+  children: ReactNode;
   mode: DataMode;
-  error?: string;
-  onDemo: () => void;
+  switcher?: ReactNode;
+  onModeChange: () => void;
 }) {
-  if (error) {
-    return (
-      <div className="state-banner state-banner--error">
-        <XCircle size={17} />
-        <div>
-          <strong>Live incident data unavailable</strong>
-          <span>{error}</span>
-        </div>
-        <button className="button button--quiet" onClick={onDemo}>
-          Open demo fixture
-        </button>
-      </div>
-    );
-  }
   return (
-    <div
-      className={`state-banner ${mode === "demo" ? "state-banner--demo" : "state-banner--api"}`}
-    >
-      <span className="state-banner__icon">
-        {mode === "demo" ? <WifiOff size={16} /> : <Activity size={16} />}
-      </span>
-      <div>
-        <strong>
-          {mode === "demo"
-            ? "OFFLINE / DEMO FIXTURE"
-            : "LIVE API / SIMULATED RESPONSE"}
-        </strong>
-        <span>
-          {mode === "demo"
-            ? "primary-v1 · frozen account-compromise scenario · no backend required"
-            : `${configuredApiBase} · incident and evidence routes`}
-        </span>
-      </div>
-      <span className="state-banner__tail">
-        {mode === "demo" ? "LOCAL" : "CONNECTED"}
-      </span>
+    <div className="app">
+      <header className="topbar">
+        <div className="brand">
+          <Radar size={20} strokeWidth={2.4} aria-hidden="true" />
+          <strong>TraceSOC</strong>
+        </div>
+        {switcher}
+        <div className="topbar__end">
+          <span className="topbar__zone">Times in UTC</span>
+          <button
+            className="source-chip"
+            onClick={onModeChange}
+            title={
+              mode === "demo"
+                ? "Offline fixture. Set an API base URL to connect real data."
+                : `Live API at ${configuredApiBase}. Switch to the offline fixture.`
+            }
+          >
+            <span className={`dot dot--${mode === "demo" ? "amber" : "green"}`} />
+            {mode === "demo" ? "Offline fixture" : "Live API"}
+          </button>
+          <ThemeToggle />
+          <button
+            className="icon-button"
+            aria-label="Reload workspace"
+            onClick={() => window.location.reload()}
+          >
+            <RefreshCw size={16} />
+          </button>
+        </div>
+      </header>
+      {children}
     </div>
   );
 }
 
-function LoadingScreen() {
-  return (
-    <main className="main-content">
-      <div className="loading-heading">
-        <div className="skeleton skeleton--eyebrow" />
-        <div className="skeleton skeleton--title" />
-        <div className="skeleton skeleton--copy" />
-      </div>
-      <div className="loading-grid">
-        <div className="skeleton skeleton--panel" />
-        <div className="skeleton skeleton--panel" />
-        <div className="skeleton skeleton--wide" />
-      </div>
-    </main>
-  );
-}
-
-function EmptyState({ onDemo }: { onDemo: () => void }) {
-  return (
-    <main className="main-content">
-      <div className="empty-state">
-        <div className="empty-state__icon">
-          <Search size={22} />
-        </div>
-        <span className="eyebrow">Incident queue</span>
-        <h1>No incidents in this workspace</h1>
-        <p>
-          The configured API returned an empty incident set. Load the frozen
-          primary fixture to walk the analyst flow locally.
-        </p>
-        <button className="button button--primary" onClick={onDemo}>
-          <Radar size={16} /> Open primary fixture
-        </button>
-      </div>
-    </main>
-  );
-}
-
-function ErrorState({ error, onDemo }: { error: string; onDemo: () => void }) {
-  return (
-    <main className="main-content">
-      <div className="empty-state empty-state--error">
-        <div className="empty-state__icon">
-          <WifiOff size={22} />
-        </div>
-        <span className="eyebrow">Connection issue</span>
-        <h1>TraceSOC could not load the case</h1>
-        <p>
-          {error}. Check the API base URL and CORS settings, or continue with
-          the clearly labeled local fixture.
-        </p>
-        <div className="empty-state__actions">
-          <button className="button button--primary" onClick={onDemo}>
-            <Radar size={16} /> Open demo fixture
-          </button>
-          <button
-            className="button button--quiet"
-            onClick={() => window.location.reload()}
-          >
-            <RefreshCw size={15} /> Retry API
-          </button>
-        </div>
-      </div>
-    </main>
-  );
-}
-
-function IncidentRail({
+function CaseSwitcher({
   incidents,
-  data,
   selectedId,
   onSelect,
-  search,
-  setSearch,
 }: {
   incidents: Incident[];
-  data: IncidentData;
   selectedId: string;
   onSelect: (id: string) => void;
-  search: string;
-  setSearch: (value: string) => void;
 }) {
+  const [search, setSearch] = useState("");
+  const ref = useRef<HTMLDetailsElement>(null);
+  const current = incidents.find((incident) => incident.incident_id === selectedId);
   const filtered = incidents.filter((incident) =>
     `${incident.incident_id} ${incident.title} ${incident.status}`
       .toLowerCase()
       .includes(search.toLowerCase()),
   );
   return (
-    <aside className="incident-rail">
-      <div className="rail-heading">
-        <div>
-          <span className="eyebrow">Case queue</span>
-          <h2>
-            Incidents{" "}
-            <span>{incidents.length.toString().padStart(2, "0")}</span>
-          </h2>
-        </div>
+    <details className="switcher" ref={ref}>
+      <summary>
+        <span className="switcher__id">{current?.incident_id ?? "Cases"}</span>
+        <span className="switcher__title">{current?.title ?? "Choose a case"}</span>
+        <span className="switcher__count">
+          {incidents.length} {incidents.length === 1 ? "case" : "cases"}
+        </span>
+        <ChevronDown size={15} aria-hidden="true" />
+      </summary>
+      <div className="switcher__menu">
+        <label className="search">
+          <Search size={15} aria-hidden="true" />
+          <input
+            aria-label="Search cases"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by ID, title or status"
+          />
+        </label>
+        <ul>
+          {filtered.map((incident) => (
+            <li key={incident.incident_id}>
+              <button
+                aria-current={incident.incident_id === selectedId}
+                onClick={() => {
+                  onSelect(incident.incident_id);
+                  ref.current?.removeAttribute("open");
+                }}
+              >
+                <span className="switcher__id">{incident.incident_id}</span>
+                <span>{incident.title}</span>
+                <small>
+                  {humanize(incident.status)} · {humanize(incident.severity)} severity ·
+                  updated {formatTime(incident.updated_at)}
+                </small>
+              </button>
+            </li>
+          ))}
+        </ul>
+        {!filtered.length && <p className="menu-empty">No case matches that search.</p>}
       </div>
-      <label className="search-field">
-        <Search size={15} />
-        <input
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
-          placeholder="Search cases"
-        />
-      </label>
-      <div className="incident-list">
-        {filtered.length ? (
-          filtered.map((incident) => (
-            <button
-              key={incident.incident_id}
-              className={`incident-row ${selectedId === incident.incident_id ? "is-selected" : ""}`}
-              onClick={() => onSelect(incident.incident_id)}
-            >
-              <span className="incident-row__indicator" />
-              <div className="incident-row__body">
-                <div className="incident-row__top">
-                  <strong>{incident.incident_id}</strong>
-                  <span>{formatTime(incident.updated_at)}</span>
-                </div>
-                <h3>{incident.title}</h3>
-                <div className="incident-row__meta">
-                  <StatusPill tone="amber" dot>
-                    {humanize(incident.status)}
-                  </StatusPill>
-                  <span>{humanize(incident.severity)}</span>
-                </div>
-              </div>
-              <ChevronRight size={14} className="incident-row__chevron" />
-            </button>
-          ))
-        ) : (
-          <div className="rail-empty">
-            <Search size={18} />
-            <span>No matching cases</span>
-            <small>Try a different case ID or title.</small>
-          </div>
-        )}
-      </div>
-      <div className="rail-footer">
-        <div>
-          <span className="rail-footer__number">{data.events.length}</span>
-          <span>evidence records</span>
-        </div>
-        <div>
-          <span className="rail-footer__number">{data.findings.length}</span>
-          <span>findings</span>
-        </div>
-      </div>
-    </aside>
+    </details>
   );
 }
 
-function SectionHeading({
-  eyebrow,
-  title,
-  copy,
-  action,
-}: {
-  eyebrow?: string;
-  title: string;
-  copy?: string;
-  action?: ReactNode;
-}) {
+function ErrorBanner({ error, onDemo }: { error: string; onDemo: () => void }) {
   return (
-    <div className="section-heading">
+    <div className="banner" role="alert">
+      <XCircle size={17} aria-hidden="true" />
       <div>
-        <div className="section-heading__eyebrow">{eyebrow}</div>
-        <h2>{title}</h2>
-        {copy && <p>{copy}</p>}
+        <strong>Live incident data is unavailable</strong>
+        <span>{error}</span>
       </div>
-      {action}
+      <button className="button button--quiet" onClick={onDemo}>
+        Open offline fixture
+      </button>
     </div>
   );
 }
 
-function EvidenceChip({
-  id,
-  onClick,
-}: {
-  id: string;
-  onClick: (id: string) => void;
-}) {
+function LoadingScreen() {
   return (
-    <button className="evidence-chip" onClick={() => onClick(id)}>
-      <span>↗</span>
-      {id}
-    </button>
+    <main className="page" aria-busy="true">
+      <div className="skeleton skeleton--title" />
+      <div className="skeleton skeleton--line" />
+      <div className="skeleton skeleton--block" />
+    </main>
   );
 }
 
-function FindingsPanel({
-  data,
-  onEvidence,
+function Notice({
+  icon,
+  title,
+  children,
+  actions,
 }: {
-  data: IncidentData;
-  onEvidence: (sourceId: string) => void;
+  icon: ReactNode;
+  title: string;
+  children: ReactNode;
+  actions: ReactNode;
 }) {
   return (
-    <section className="panel findings-panel">
-      <SectionHeading
-        eyebrow="Deterministic signals"
-        title="Why this case is open"
-        copy="Rules create investigation signals. Evidence remains the source of truth."
-      />
-      <div className="finding-list">
-        {data.findings.map((finding) => (
-          <article className="finding" key={finding.finding_id}>
-            <div className="finding__rail">
-              <span
-                className={`finding__marker finding__marker--${finding.status}`}
-              />
-              <span className="finding__rule">{finding.rule_id}</span>
-            </div>
-            <div className="finding__body">
-              <div className="finding__title-row">
-                <h3>{finding.title}</h3>
-                <StatusPill
-                  tone={finding.status === "observed" ? "cyan" : "amber"}
-                >
-                  {finding.status}
-                </StatusPill>
-              </div>
-              <p>{finding.description}</p>
-              <div className="finding__evidence">
-                {finding.evidence.map((id) => (
-                  <EvidenceChip key={id} id={id} onClick={onEvidence} />
-                ))}
-              </div>
-            </div>
-          </article>
-        ))}
+    <main className="page">
+      <div className="notice">
+        <div className="notice__icon">{icon}</div>
+        <h1>{title}</h1>
+        <p>{children}</p>
+        <div className="notice__actions">{actions}</div>
       </div>
+    </main>
+  );
+}
+
+/* -------------------------------------------------------------- case head */
+
+function CaseHead({
+  data,
+  onReview,
+}: {
+  data: IncidentData;
+  onReview: () => void;
+}) {
+  const { incident } = data;
+  const span = seconds(incident.observed_start, incident.observed_end);
+  return (
+    <section className="case-head">
+      <div className="case-head__main">
+        <span className="mono case-head__id">{incident.incident_id}</span>
+        <h1>{incident.title}</h1>
+        <p>
+          {data.events.length} events between {formatTime(incident.observed_start)} and{" "}
+          {formatTime(incident.observed_end)} UTC ({duration(span)}) triggered{" "}
+          {data.findings.length} detection {data.findings.length === 1 ? "signal" : "signals"}{" "}
+          across {data.entities.length} entities.
+        </p>
+        <div className="case-head__tags">
+          <Tag tone="amber">{humanize(incident.status)}</Tag>
+          <Tag tone="red">{humanize(incident.severity)} severity</Tag>
+          <Tag>{humanize(incident.confidence)} confidence</Tag>
+          <Tag>{incident.tenant_id} tenant</Tag>
+        </div>
+      </div>
+      <button className="button button--primary" onClick={onReview}>
+        <ShieldAlert size={16} aria-hidden="true" /> Review response
+      </button>
     </section>
   );
 }
+
+/* ---------------------------------------------------------------- signals */
+
+function Signals({
+  data,
+  focusId,
+  onFocus,
+  onEvidence,
+}: {
+  data: IncidentData;
+  focusId: string | null;
+  onFocus: (id: string | null) => void;
+  onEvidence: (sourceId: string) => void;
+}) {
+  return (
+    <section className="block" aria-labelledby="signals-title">
+      <div className="block__head">
+        <h2 id="signals-title">Why this case is open</h2>
+        <p>
+          Detection rules raised these signals. Choose one to highlight the events
+          behind it; the evidence stays the source of truth.
+        </p>
+      </div>
+      <ul className="signals">
+        {data.findings.map((finding) => {
+          const active = focusId === finding.finding_id;
+          return (
+            <li
+              key={finding.finding_id}
+              className={`signal ${active ? "is-active" : ""}`}
+            >
+              <button
+                className="signal__head"
+                aria-pressed={active}
+                onClick={() => onFocus(active ? null : finding.finding_id)}
+              >
+                <span className="signal__title">{finding.title}</span>
+                <Tag tone={finding.status === "observed" ? "green" : "amber"}>
+                  {humanize(finding.status)}
+                </Tag>
+              </button>
+              <p>{finding.description}</p>
+              <div className="signal__foot">
+                <span className="mono signal__rule">{finding.rule_id}</span>
+                <span className="chips">
+                  {finding.evidence.map((id) => (
+                    <button className="chip" key={id} onClick={() => onEvidence(id)}>
+                      {id}
+                    </button>
+                  ))}
+                </span>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/* --------------------------------------------------------------- timeline */
 
 function Timeline({
   data,
   selectedId,
+  citedIds,
   onSelect,
 }: {
   data: IncidentData;
   selectedId: string;
+  citedIds: Set<string> | null;
   onSelect: (id: string) => void;
 }) {
+  const start = data.events[0]?.event_time;
   return (
-    <section className="panel timeline-panel" id="timeline">
-      <SectionHeading
-        eyebrow="Evidence stream"
-        title="Timeline"
-        copy="Ordered by event time, then ingestion time, then event ID."
-      />
-      <div className="timeline-list">
-        {data.events.map((event) => (
-          <button
-            className={`timeline-event ${selectedId === event.event_id ? "is-selected" : ""}`}
-            key={event.event_id}
-            onClick={() => onSelect(event.event_id)}
-          >
-            <div className="timeline-event__time">
-              <strong>{formatTime(event.event_time)}</strong>
-              <span>
-                +{Math.max(0, Math.round(
-                  (Date.parse(event.event_time) - Date.parse(data.events[0].event_time)) / 1000,
-                ))}s
-              </span>
-            </div>
-            <div className="timeline-event__track">
-              <span
-                className={`timeline-event__node ${event.outcome === "failure" ? "timeline-event__node--failure" : ""}`}
-              />
-              <span className="timeline-event__line" />
-            </div>
-            <div className="timeline-event__content">
-              <div className="timeline-event__top">
-                <StatusPill
-                  tone={
-                    event.outcome === "failure"
-                      ? "red"
-                      : event.severity === "high"
-                        ? "amber"
-                        : "neutral"
-                  }
-                >
-                  {humanize(event.event_type)}
-                </StatusPill>
-                <span className="timeline-event__source">
-                  {event.source_type}
-                </span>
-                <span className="timeline-event__id">
-                  {event.source_event_id}
-                </span>
-              </div>
-              <h3>{event.summary}</h3>
-              <p>
-                {event.username && (
-                  <>
-                    <UserRound size={12} /> {event.username}
-                  </>
-                )}
-                {event.host_id && (
-                  <>
-                    <Monitor size={12} /> {event.host_id}
-                  </>
-                )}
-                {event.session_id && (
-                  <>
-                    <LockKeyhole size={12} /> {event.session_id}
-                  </>
-                )}
-              </p>
-            </div>
-            <ChevronRight size={15} className="timeline-event__chevron" />
-          </button>
-        ))}
+    <section className="block" aria-labelledby="timeline-title">
+      <div className="block__head">
+        <h2 id="timeline-title">What happened</h2>
+        <p>
+          Events in the order they occurred; spacing grows with the time between them.
+        </p>
       </div>
+      <ol className="timeline">
+        {data.events.map((event, index) => {
+          const previous = data.events[index - 1];
+          const gap = previous
+            ? Math.min(40, Math.sqrt(seconds(previous.event_time, event.event_time)) * 3)
+            : 0;
+          const cited = citedIds
+            ? [...citedIds].some((id) => matchesSource(event, id))
+            : null;
+          const failed = event.outcome === "failure";
+          return (
+            <li
+              key={event.event_id}
+              style={{ "--gap": `${gap}px` } as CSSProperties}
+              className={cited === null ? "" : cited ? "is-cited" : "is-dim"}
+            >
+              <button
+                className={`beat ${selectedId === event.event_id ? "is-selected" : ""}`}
+                aria-current={selectedId === event.event_id}
+                onClick={() => onSelect(event.event_id)}
+              >
+                <span className="beat__time">
+                  <span className="mono">{formatTime(event.event_time)}</span>
+                  <small>+{seconds(start, event.event_time)} s</small>
+                </span>
+                <span
+                  className={`beat__node ${failed ? "beat__node--failure" : ""}`}
+                  aria-hidden="true"
+                />
+                <span className="beat__body">
+                  <strong>{event.summary}</strong>
+                  <span className="beat__meta">
+                    {humanize(event.event_type) === event.summary
+                      ? humanize(event.source_type)
+                      : `${humanize(event.event_type)} · ${event.source_type}`}
+                    {failed && <Tag tone="red">Failed</Tag>}
+                  </span>
+                  <span className="beat__refs">
+                    {event.username && (
+                      <span>
+                        <UserRound size={13} aria-hidden="true" /> {event.username}
+                      </span>
+                    )}
+                    {event.host_id && (
+                      <span>
+                        <Monitor size={13} aria-hidden="true" /> {event.host_id}
+                      </span>
+                    )}
+                    {event.session_id && (
+                      <span>
+                        <LockKeyhole size={13} aria-hidden="true" /> {event.session_id}
+                      </span>
+                    )}
+                  </span>
+                </span>
+                <span className="mono beat__id">{event.source_event_id}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
     </section>
   );
 }
 
-function EvidenceDetail({ event }: { event?: EventRecord }) {
+/* ------------------------------------------------------------ side panels */
+
+function EvidencePanel({ event }: { event?: EventRecord }) {
   const [view, setView] = useState<EvidenceView>("normalized");
   useEffect(() => setView("normalized"), [event?.event_id]);
   if (!event)
-    return (
-      <div className="evidence-detail evidence-detail--empty">
-        <Eye size={19} />
-        <span>Select an event to inspect its source payload.</span>
-      </div>
-    );
-  const payload =
-    view === "normalized" ? event.normalized_fields : event.raw_event;
+    return <p className="empty">Select an event in the timeline to read its source record.</p>;
+  const payload = view === "normalized" ? event.normalized_fields : event.raw_event;
   return (
-    <aside className="evidence-detail">
-      <div className="evidence-detail__top">
-        <div>
-          <span className="eyebrow">Selected evidence</span>
-          <h3>{event.source_event_id}</h3>
+    <div className="stack">
+      <div>
+        <div className="row row--between">
+          <h3 className="mono">{event.source_event_id}</h3>
+          <Tag tone={event.outcome === "failure" ? "red" : "green"}>
+            {humanize(event.outcome)}
+          </Tag>
         </div>
-        <StatusPill tone={event.outcome === "failure" ? "red" : "cyan"} dot>
-          {event.outcome}
-        </StatusPill>
+        <p className="muted">{event.summary}</p>
       </div>
-      <div className="evidence-detail__meta">
-        <span>
-          <Clock3 size={13} /> {formatDate(event.event_time)} ·{" "}
-          {formatTime(event.event_time)}
-        </span>
-        <span>
-          <Database size={13} /> {event.event_id}
-        </span>
-      </div>
-      <div className="segmented-control" role="tablist">
-        <button
-          className={view === "normalized" ? "is-active" : ""}
-          onClick={() => setView("normalized")}
-        >
+      <dl className="facts">
+        <div>
+          <dt>Event time</dt>
+          <dd className="mono">
+            {formatDate(event.event_time)} {formatTime(event.event_time)}
+          </dd>
+        </div>
+        <div>
+          <dt>Ingested</dt>
+          <dd className="mono">{formatTime(event.ingested_at)}</dd>
+        </div>
+        <div className="facts__wide">
+          <dt>Record ID</dt>
+          <dd className="mono">{event.event_id}</dd>
+        </div>
+      </dl>
+      <div className="segmented" role="group" aria-label="Record view">
+        <button aria-pressed={view === "normalized"} onClick={() => setView("normalized")}>
           Normalized
         </button>
-        <button
-          className={view === "raw" ? "is-active" : ""}
-          onClick={() => setView("raw")}
-        >
+        <button aria-pressed={view === "raw"} onClick={() => setView("raw")}>
           Raw source
         </button>
       </div>
-      <div className="code-block">
-        <div className="code-block__header">
-          <span>
-            {view === "normalized" ? "canonical fields" : "source payload"}
-          </span>
-          <span>JSON</span>
-        </div>
-        <pre>{JSON.stringify(payload, null, 2)}</pre>
-      </div>
-      <div className="evidence-detail__footer">
-        <span>ingested {formatTime(event.ingested_at)}</span>
-        <span className="verified-label">
-          <CheckCircle2 size={13} /> traceable record
-        </span>
-      </div>
-    </aside>
-  );
-}
-
-function RelationshipMap({
-  data,
-  selectedEntityId,
-  onSelect,
-}: {
-  data: IncidentData;
-  selectedEntityId: string;
-  onSelect: (id: string) => void;
-}) {
-  const positions: Record<string, { x: number; y: number }> = {
-    "user:alice": { x: 15, y: 29 },
-    "ip:203.0.113.50": { x: 15, y: 76 },
-    "host:ws-07": { x: 48, y: 18 },
-    "session:session-S104": { x: 48, y: 67 },
-    "process:powershell.exe": { x: 82, y: 35 },
-    "ip:198.51.100.24": { x: 82, y: 77 },
-  };
-  const fallbackPosition = (index: number) => ({
-    x: 16 + (index % 3) * 33,
-    y: 22 + Math.floor(index / 3) * 50,
-  });
-  const points = data.entities.map((entity, index) => ({
-    entity,
-    position: positions[entity.canonical_key] ?? fallbackPosition(index),
-  }));
-  const pointById = new Map(
-    points.map((point) => [point.entity.entity_id, point]),
-  );
-  return (
-    <div className="relationship-map">
-      <svg
-        className="relationship-map__lines"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        aria-hidden="true"
-      >
-        {data.relationships.map((relationship) => {
-          const from = pointById.get(relationship.from);
-          const to = pointById.get(relationship.to);
-          if (!from || !to) return null;
-          const active =
-            selectedEntityId === relationship.from ||
-            selectedEntityId === relationship.to;
-          return (
-            <g
-              key={`${relationship.from}-${relationship.to}`}
-              className={`${relationship.status === "inferred" ? "is-inferred" : ""} ${active ? "is-active" : ""}`}
-            >
-              <line
-                x1={from.position.x}
-                y1={from.position.y}
-                x2={to.position.x}
-                y2={to.position.y}
-              />
-              <text
-                x={(from.position.x + to.position.x) / 2}
-                y={(from.position.y + to.position.y) / 2 - 2}
-              >
-                {relationship.label}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-      {points.map(({ entity, position }) => {
-        const Icon = iconForEntity[entity.entity_type];
-        return (
-          <button
-            key={entity.entity_id}
-            className={`graph-node graph-node--${entity.entity_type} ${selectedEntityId === entity.entity_id ? "is-selected" : ""}`}
-            style={
-              {
-                "--node-x": `${position.x}%`,
-                "--node-y": `${position.y}%`,
-              } as CSSProperties
-            }
-            onClick={() => onSelect(entity.entity_id)}
-          >
-            <span className="graph-node__icon">
-              <Icon size={15} />
-            </span>
-            <span className="graph-node__copy">
-              <strong>{entity.display_value}</strong>
-              <small>{entity.entity_type}</small>
-            </span>
-          </button>
-        );
-      })}
-      <div className="graph-legend">
-        <span>
-          <i className="legend-line" /> observed
-        </span>
-        <span>
-          <i className="legend-line legend-line--dashed" /> inferred
-        </span>
-      </div>
+      <pre className="code" tabIndex={0} aria-label="Event payload">
+        {JSON.stringify(payload, null, 2)}
+      </pre>
     </div>
   );
 }
 
-function RelationshipPanel({
+const NODE_POSITIONS: Record<string, { x: number; y: number }> = {
+  "user:alice": { x: 16, y: 28 },
+  "ip:203.0.113.50": { x: 16, y: 78 },
+  "host:ws-07": { x: 50, y: 14 },
+  "session:session-S104": { x: 50, y: 62 },
+  "process:powershell.exe": { x: 84, y: 34 },
+  "ip:198.51.100.24": { x: 84, y: 82 },
+};
+const GRAPH_W = 400;
+const GRAPH_H = 300;
+
+function EntitiesPanel({
   data,
   selectedEntityId,
   onSelect,
@@ -826,108 +559,121 @@ function RelationshipPanel({
   const selected =
     data.entities.find((entity) => entity.entity_id === selectedEntityId) ??
     data.entities[0];
+  const nodes = data.entities.map((entity, index) => {
+    const spot = NODE_POSITIONS[entity.canonical_key] ?? {
+      x: 16 + (index % 3) * 34,
+      y: 22 + Math.floor(index / 3) * 50,
+    };
+    const width = 40 + entity.display_value.length * 7.6;
+    return {
+      entity,
+      width,
+      x: Math.min(GRAPH_W - width / 2 - 4, Math.max(width / 2 + 4, (spot.x / 100) * GRAPH_W)),
+      y: (spot.y / 100) * GRAPH_H,
+    };
+  });
+  const byId = new Map(nodes.map((node) => [node.entity.entity_id, node]));
   const related = data.relationships.filter(
-    (relationship) =>
-      relationship.from === selected?.entity_id ||
-      relationship.to === selected?.entity_id,
+    (link) => link.from === selected?.entity_id || link.to === selected?.entity_id,
   );
+  const onKey = (id: string) => (event: KeyboardEvent) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect(id);
+    }
+  };
   return (
-    <section className="panel relationship-panel" id="relationships">
-      <SectionHeading
-        eyebrow="Bounded entity graph"
-        title="Relationships"
-        copy="Observed links are solid. Derived links are dashed; reachability is not proof."
-        action={
-          <StatusPill tone="cyan" dot>
-            {data.entities.length} entities
-          </StatusPill>
-        }
-      />
-      <div className="relationship-layout">
-        <RelationshipMap
-          data={data}
-          selectedEntityId={selectedEntityId}
-          onSelect={onSelect}
-        />
-        <aside className="relationship-inspector">
-          {selected ? (
-            <>
-              <div className="relationship-inspector__header">
-                <span
-                  className={`entity-icon entity-icon--${selected.entity_type}`}
-                >
-                  <EntityIcon type={selected.entity_type} />
-                </span>
-                <div>
-                  <span>{selected.entity_type}</span>
-                  <h3>{selected.display_value}</h3>
-                </div>
-              </div>
-              <div className="relationship-inspector__key">
-                <span>Canonical key</span>
-                <code>{selected.canonical_key}</code>
-              </div>
-              <div className="relationship-inspector__links">
-                <span className="eyebrow">Linked evidence</span>
-                {related.length ? (
-                  related.map((relationship) => (
-                    <div
-                      className="relationship-link"
-                      key={`${relationship.from}-${relationship.to}`}
-                    >
-                      <div>
-                        <span>
-                          {relationship.from === selected.entity_id
-                            ? "to"
-                            : "from"}
-                        </span>
-                        <strong>
-                          {
-                            data.entities.find(
-                              (entity) =>
-                                entity.entity_id ===
-                                (relationship.from === selected.entity_id
-                                  ? relationship.to
-                                  : relationship.from),
-                            )?.display_value
-                          }
-                        </strong>
-                      </div>
-                      <StatusPill
-                        tone={
-                          relationship.status === "inferred" ? "amber" : "cyan"
-                        }
-                      >
-                        {relationship.status}
-                      </StatusPill>
-                      <div className="relationship-link__evidence">
-                        {relationship.evidence.map((id) => (
-                          <EvidenceChip id={id} key={id} onClick={onEvidence} />
-                        ))}
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="muted-copy">
-                    No linked evidence in this incident boundary.
-                  </p>
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="relationship-inspector__empty">
-              Select an entity node to inspect its evidence links.
-            </div>
+    <div className="stack">
+      <p className="muted">
+        Solid lines are observed links, dashed lines are inferred. A shared appearance
+        in the logs is not proof that one entity caused another.
+      </p>
+      <svg
+        className="graph"
+        viewBox={`0 0 ${GRAPH_W} ${GRAPH_H}`}
+        role="group"
+        aria-label="Entity relationships"
+      >
+        {data.relationships.map((link) => {
+          const from = byId.get(link.from);
+          const to = byId.get(link.to);
+          if (!from || !to) return null;
+          const active = link.from === selected?.entity_id || link.to === selected?.entity_id;
+          return (
+            <line
+              key={`${link.from}-${link.to}`}
+              x1={from.x}
+              y1={from.y}
+              x2={to.x}
+              y2={to.y}
+              className={`${active ? "is-active" : ""} ${link.status === "observed" ? "" : "is-inferred"}`}
+            />
+          );
+        })}
+        {nodes.map(({ entity, x, y, width }) => {
+          const Icon = iconForEntity[entity.entity_type];
+          const isSelected = entity.entity_id === selected?.entity_id;
+          return (
+            <g
+              key={entity.entity_id}
+              className={`node ${isSelected ? "is-selected" : ""}`}
+              transform={`translate(${x - width / 2} ${y - 15})`}
+              role="button"
+              tabIndex={0}
+              aria-pressed={isSelected}
+              aria-label={`${entity.entity_type} ${entity.display_value}`}
+              onClick={() => onSelect(entity.entity_id)}
+              onKeyDown={onKey(entity.entity_id)}
+            >
+              <rect width={width} height={30} rx={6} />
+              <Icon x={10} y={8} width={14} height={14} />
+              <text x={32} y={20}>
+                {entity.display_value}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      {selected && (
+        <div className="stack stack--tight">
+          <div className="row row--between">
+            <h3>{selected.display_value}</h3>
+            <Tag>{humanize(selected.entity_type)}</Tag>
+          </div>
+          <p className="mono muted">{selected.canonical_key}</p>
+          <ul className="links">
+            {related.map((link) => {
+              const otherId = link.from === selected.entity_id ? link.to : link.from;
+              const other = data.entities.find((entity) => entity.entity_id === otherId);
+              return (
+                <li key={`${link.from}-${link.to}`}>
+                  <div className="row row--between">
+                    <span>
+                      {link.from === selected.entity_id ? "to" : "from"}{" "}
+                      <strong>{other?.display_value}</strong>
+                    </span>
+                    <Tag tone={link.status === "observed" ? "green" : "amber"}>
+                      {humanize(link.status)}
+                    </Tag>
+                  </div>
+                  <span className="chips">
+                    {link.evidence.map((id) => (
+                      <button className="chip" key={id} onClick={() => onEvidence(id)}>
+                        {id}
+                      </button>
+                    ))}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          {!related.length && (
+            <p className="muted">No linked evidence inside this incident boundary.</p>
           )}
-        </aside>
-      </div>
-    </section>
+        </div>
+      )}
+    </div>
   );
-}
-
-function EntityIcon({ type }: { type: Entity["entity_type"] }) {
-  const Icon = iconForEntity[type];
-  return <Icon size={16} />;
 }
 
 function ReportPanel({
@@ -941,141 +687,95 @@ function ReportPanel({
   onRun: () => void;
   onEvidence: (sourceId: string) => void;
 }) {
-  return (
-    <section className="panel report-panel" id="report">
-      <div className="report-panel__head">
-        <SectionHeading
-          eyebrow="Constrained investigation"
-          title="Analyst report"
-          copy="The investigator can explain evidence, but cannot create new evidence or take action."
-        />
-        <div className="report-status">
-          {status === "completed" ? (
-            <StatusPill tone="green" dot>
-              Mock run complete
-            </StatusPill>
-          ) : status === "running" ? (
-            <StatusPill tone="cyan" dot>
-              Gathering evidence
-            </StatusPill>
-          ) : (
-            <StatusPill tone="neutral">Ready to run</StatusPill>
-          )}
-        </div>
-      </div>
-      {(status === "idle" || status === "failed") && (
-        <div className="report-callout">
-          <div className="report-callout__icon">
-            <Play size={17} />
-          </div>
-          <div>
-            <strong>
-              {status === "failed"
-                ? "Investigation failed"
-                : "Run the offline investigator"}
-            </strong>
-            <p>
-              {status === "failed"
-                ? "Deterministic evidence remains available. Retry the bounded investigation."
-                : "It will inspect the stored events through read-only tools, compare two hypotheses, and cite every material claim."}
-            </p>
-          </div>
-          <button className="button button--primary" onClick={onRun}>
-            <Play size={15} />{" "}
+  if (status === "idle" || status === "failed")
+    return (
+      <div className="stack">
+        <div className="callout">
+          <h3>{status === "failed" ? "The investigation failed" : "No report yet"}</h3>
+          <p>
             {status === "failed"
-              ? "Retry investigation"
-              : "Run mock investigation"}
+              ? "The deterministic evidence is still available. Run the investigation again."
+              : "The investigator reads stored events through read-only tools, weighs two hypotheses and cites the events behind every claim. It cannot create evidence or take action."}
+          </p>
+          <button className="button button--primary" onClick={onRun}>
+            <Play size={15} aria-hidden="true" />
+            {status === "failed" ? "Retry investigation" : "Run mock investigation"}
           </button>
         </div>
-      )}
-      {status === "running" && (
-        <div className="report-running">
-          <Loader2 size={18} className="spin" />
-          <div>
-            <strong>Reading the evidence boundary</strong>
-            <p>Inspecting timeline, event detail, and session relationships…</p>
-          </div>
-          <div className="progress-track">
-            <span />
-          </div>
-        </div>
-      )}
-      {status === "completed" && (
-        <div className="report-body">
-          <div className="report-summary">
-            <span className="report-summary__label">Executive summary</span>
-            <p>{data.report.executive_summary}</p>
-            <div className="report-meta">
-              <span>
-                <CheckCircle2 size={13} /> 7 event citations
+      </div>
+    );
+  if (status === "running")
+    return (
+      <div className="callout" role="status">
+        <h3>
+          <Loader2 size={16} className="spin" aria-hidden="true" /> Reading the evidence
+        </h3>
+        <p>Inspecting the timeline, event details and session relationships.</p>
+      </div>
+    );
+  const { report } = data;
+  return (
+    <div className="stack stack--loose">
+      <div className="stack stack--tight">
+        <p className="lede">{report.executive_summary}</p>
+        <p className="muted">Offline mock investigator · read-only tools</p>
+      </div>
+      <section>
+        <h3>Observed facts</h3>
+        <ul className="claims">
+          {report.observed_facts.map((fact) => (
+            <li key={fact.claim}>
+              <p>{fact.claim}</p>
+              <span className="chips">
+                {fact.evidence.map((id) => (
+                  <button className="chip" key={id} onClick={() => onEvidence(id)}>
+                    {data.events.find((event) => matchesSource(event, id))?.source_event_id ?? id.slice(0, 8)}
+                  </button>
+                ))}
               </span>
-              <span>
-                <LockKeyhole size={13} /> 3 read-only tools
-              </span>
-              <span>
-                <Clock3 size={13} /> completed just now
-              </span>
-            </div>
-          </div>
-          <div className="report-columns">
-            <div>
-              <span className="report-subhead">Observed facts</span>
-              {data.report.observed_facts.map((fact) => (
-                <div className="report-item" key={fact.claim}>
-                  <CheckCircle2 size={15} />
-                  <div>
-                    <p>{fact.claim}</p>
-                    <div>
-                      {fact.evidence.map((id) => (
-                        <EvidenceChip key={id} id={id} onClick={onEvidence} />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div>
-              <span className="report-subhead">Competing hypotheses</span>
-              {data.report.competing_hypotheses.map((hypothesis) => (
-                <div className="hypothesis" key={hypothesis.name}>
-                  <div className="hypothesis__top">
-                    <strong>{hypothesis.name}</strong>
-                    <StatusPill
-                      tone={
-                        hypothesis.assessment === "supported" ? "cyan" : "amber"
-                      }
-                    >
-                      {humanize(hypothesis.assessment)}
-                    </StatusPill>
-                  </div>
-                  <p>{hypothesis.explanation}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="report-footer">
-            <span>
-              <AlertTriangle size={14} /> Missing telemetry:{" "}
-              {data.report.missing_evidence[0]}
-            </span>
-            <span>{data.report.limitations[0]}</span>
-          </div>
-        </div>
-      )}
-    </section>
+            </li>
+          ))}
+        </ul>
+      </section>
+      <section>
+        <h3>Competing hypotheses</h3>
+        <ul className="claims">
+          {report.competing_hypotheses.map((hypothesis) => (
+            <li key={hypothesis.name}>
+              <div className="row row--between">
+                <strong>{hypothesis.name}</strong>
+                <Tag tone={hypothesis.assessment === "supported" ? "blue" : "amber"}>
+                  {humanize(hypothesis.assessment)}
+                </Tag>
+              </div>
+              <p>{hypothesis.explanation}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+      <div className="callout callout--warn">
+        <h3>
+          <AlertTriangle size={15} aria-hidden="true" /> What is missing
+        </h3>
+        {report.missing_evidence.map((item) => (
+          <p key={item}>{item}</p>
+        ))}
+        {report.limitations.map((item) => (
+          <p className="muted" key={item}>
+            {item}
+          </p>
+        ))}
+      </div>
+    </div>
   );
 }
 
-const responseSteps: Array<{
-  key: ResponseState;
-  label: string;
-  note: string;
-}> = [
-  { key: "proposed", label: "Proposed", note: "allowlisted action" },
-  { key: "awaiting_approval", label: "Approval", note: "analyst decision" },
-  { key: "approved", label: "Approved", note: "ready to simulate" },
-  { key: "executing", label: "Executing", note: "revoke session" },
-  { key: "verified", label: "Verification", note: "check postcondition" },
+const responseSteps: Array<{ key: ResponseState; label: string }> = [
+  { key: "proposed", label: "Proposed" },
+  { key: "awaiting_approval", label: "Awaiting approval" },
+  { key: "approved", label: "Approved" },
+  { key: "executing", label: "Executed" },
+  { key: "verified", label: "Verified" },
 ];
 
 function ResponsePanel({
@@ -1091,222 +791,164 @@ function ResponsePanel({
   busy: boolean;
   onAdvance: () => void;
 }) {
+  const failed = state === "verification_failed" || state === "inconclusive";
   const activeIndex =
-    state === "succeeded" ||
-    state === "verification_failed" ||
-    state === "inconclusive"
+    state === "succeeded" || failed
       ? 4
       : responseSteps.findIndex((step) => step.key === state);
-  const actionCopy: Record<
-    ResponseState,
-    { title: string; description: string; button: string }
-  > = {
+  const copy: Record<ResponseState, { title: string; text: string; button: string }> = {
     proposed: {
-      title: "Review response proposal",
-      description: "The evidence-backed action is ready for analyst approval.",
+      title: "Ready for review",
+      text: "This action is backed by the evidence in the timeline. Ask for approval to continue.",
       button: "Request approval",
     },
     awaiting_approval: {
-      title: "Approval required",
-      description:
-        "This simulation will revoke the observed session only after an explicit analyst decision.",
+      title: "Approval needed",
+      text: "The simulation revokes the observed session only after you approve it.",
       button: "Approve simulation",
     },
     approved: {
-      title: "Approved for simulation",
-      description:
-        "The action is allowlisted and scoped to the session observed in this incident.",
+      title: "Approved",
+      text: "The action is allowlisted and limited to the session seen in this incident.",
       button: "Execute simulation",
     },
     executing: {
-      title: "Executing simulation",
-      description:
-        "Updating the simulated session state and writing an audit event…",
-      button: "Working",
+      title: "Executing",
+      text: "Updating the simulated session and writing an audit event.",
+      button: "Executing",
     },
     succeeded: {
-      title: "Simulation completed",
-      description:
-        "The simulated revoke returned successfully. Verify the postcondition independently.",
+      title: "Executed",
+      text: "The simulated revoke returned. Verify the result independently.",
       button: "Verify session",
     },
     verified: {
-      title: "Response verified",
-      description:
-        `The independent verifier observed ${data.response.target} with active = false.`,
+      title: "Verified",
+      text: `The verifier observed ${data.response.target} with active = false.`,
       button: "Verified",
     },
     verification_failed: {
       title: "Verification failed",
-      description:
-        "The verifier did not observe the expected inactive session state.",
+      text: "The verifier did not see the session become inactive.",
       button: "Verification failed",
     },
     inconclusive: {
       title: "Verification inconclusive",
-      description:
-        "The verifier could not establish the expected postcondition.",
+      text: "The verifier could not confirm the expected state.",
       button: "Verification inconclusive",
     },
   };
-  const copy = actionCopy[state];
+  const current = copy[state];
+  const done = state === "verified";
   return (
-    <section className="panel response-panel" id="response">
-      <div className="response-panel__head">
-        <SectionHeading
-          eyebrow="Controlled response"
-          title="Containment"
-          copy="Simulation only · every state change is explicit and auditable."
-        />
-        <StatusPill
-          tone={
-            state === "verified"
-              ? "green"
-              : state === "verification_failed" || state === "inconclusive"
-                ? "red"
-                : state === "executing"
-                  ? "cyan"
-                  : "amber"
-          }
-          dot
-        >
-          {copy.title}
-        </StatusPill>
-      </div>
-      <div className="response-stepper">
-        {responseSteps.map((step, index) => {
-          const complete = index < activeIndex;
-          const current = index === activeIndex;
-          return (
-            <div
-              className={`response-step ${complete ? "is-complete" : ""} ${current ? "is-current" : ""}`}
-              key={step.key}
-            >
-              <div className="response-step__dot">
-                {complete ? <Check size={13} /> : index + 1}
-              </div>
-              <div>
-                <strong>{step.label}</strong>
-                <span>{step.note}</span>
-              </div>
-              {index < responseSteps.length - 1 && (
-                <span className="response-step__connector" />
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div className="response-content">
-        <div className="action-summary">
-          <div className="action-summary__icon">
-            <ShieldAlert size={19} />
-          </div>
-          <div>
-            <span className="eyebrow">Allowlisted action</span>
-            <h3>Revoke session</h3>
-            <p>
-              Target <code>{data.response.target || "not identified"}</code> ·
-              expected postcondition <code>active = false</code>
-            </p>
-          </div>
+    <div className="stack stack--loose">
+      <div className="action">
+        <div className="row row--between">
+          <h3>Revoke session</h3>
+          <Tag tone="neutral">Simulation</Tag>
         </div>
-        <div className="action-details">
+        <p className="mono">
+          {data.response.target || "no session identified"} → active = false
+        </p>
+        <dl className="facts facts--stack">
           <div>
-            <span>Rationale</span>
-            <p>
-              Revoke the simulated session while preserving the evidence trail.
-            </p>
+            <dt>Why</dt>
+            <dd>Ends the simulated session while keeping the evidence trail intact.</dd>
           </div>
           <div>
-            <span>Operational impact</span>
-            <p>End one session for the affected user in the simulation.</p>
+            <dt>Impact</dt>
+            <dd>One session for the affected user.</dd>
           </div>
           <div>
-            <span>Rollback</span>
-            <p>Simulation state can be reset from the fixture.</p>
+            <dt>Rollback</dt>
+            <dd>Reset the simulation state from the fixture.</dd>
           </div>
-        </div>
-        {error && <p role="alert">{error}</p>}
-        {!data.response.target && (
-          <p>No session was identified for this incident.</p>
+        </dl>
+      </div>
+      <ol className="steps" aria-label="Response progress">
+        {responseSteps.map((step, index) => (
+          <li
+            key={step.key}
+            className={`${index < activeIndex || done ? "is-done" : ""} ${index === activeIndex && !done ? "is-current" : ""} ${index === activeIndex && failed ? "is-failed" : ""}`}
+          >
+            <span className="steps__mark">
+              {index < activeIndex || done ? <Check size={12} aria-hidden="true" /> : index + 1}
+            </span>
+            {step.label}
+          </li>
+        ))}
+      </ol>
+      <div className={`callout ${failed ? "callout--warn" : ""}`} role="status">
+        <h3>{current.title}</h3>
+        <p>{current.text}</p>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
         )}
+        {!data.response.target && <p className="error">No session was identified for this incident.</p>}
         <button
-          className={`button ${state === "verified" ? "button--success" : "button--primary"}`}
-          disabled={
-            busy ||
-            !data.response.target ||
-            state === "executing" ||
-            state === "verified" ||
-            state === "verification_failed" ||
-            state === "inconclusive"
-          }
+          className={`button ${done ? "button--success" : "button--primary"}`}
+          disabled={busy || !data.response.target || state === "executing" || done || failed}
           onClick={onAdvance}
         >
-          {state === "executing" ? (
-            <Loader2 size={15} className="spin" />
-          ) : state === "verified" ? (
-            <CheckCircle2 size={15} />
-          ) : state === "verification_failed" || state === "inconclusive" ? (
-            <AlertTriangle size={15} />
-          ) : (
-            <ArrowUpRight size={15} />
-          )}
-          {busy ? "Working…" : copy.button}
+          {state === "executing" || busy ? (
+            <Loader2 size={15} className="spin" aria-hidden="true" />
+          ) : done ? (
+            <CheckCircle2 size={15} aria-hidden="true" />
+          ) : failed ? (
+            <AlertTriangle size={15} aria-hidden="true" />
+          ) : null}
+          {busy ? "Working" : current.button}
         </button>
       </div>
-    </section>
+    </div>
   );
 }
 
+/* -------------------------------------------------------------- dashboard */
+
 function Dashboard({
   data,
-  incidents,
   mode,
-  selectedId,
-  onSelect,
-  search,
-  setSearch,
   onDemo,
   sourceError,
   setData,
 }: {
   data: IncidentData;
-  incidents: Incident[];
   mode: DataMode;
-  selectedId: string;
-  onSelect: (id: string) => void;
-  search: string;
-  setSearch: (value: string) => void;
   onDemo: () => void;
   sourceError?: string;
   setData: (data: IncidentData) => void;
 }) {
   const [selectedEventId, setSelectedEventId] = useState("evt-auth-004");
-  const [selectedEntityId, setSelectedEntityId] = useState(
-    "session:session-S104",
-  );
+  const [selectedEntityId, setSelectedEntityId] = useState("session:session-S104");
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const [tab, setTab] = useState<PanelTab>("evidence");
   const [investigationStatus, setInvestigationStatus] =
     useState<InvestigationStatus>("idle");
   const [responseState, setResponseState] = useState<ResponseState>("proposed");
-  const [responseAction, setResponseAction] = useState<ResponseAction | null>(
-    null,
-  );
+  const [responseAction, setResponseAction] = useState<ResponseAction | null>(null);
   const [responseError, setResponseError] = useState("");
   const [responseBusy, setResponseBusy] = useState(false);
   const responsePending = useRef(false);
-  const reportRef = useRef<HTMLDivElement>(null);
   const selectedEvent =
-    data.events.find((event) => event.event_id === selectedEventId) ??
-    data.events[0];
+    data.events.find((event) => event.event_id === selectedEventId) ?? data.events[0];
+  const focused = data.findings.find((finding) => finding.finding_id === focusId);
+  const citedIds = focused ? new Set(focused.evidence) : null;
+
   const openEvidence = (sourceId: string) => {
-    const event = data.events.find((item) => getSourceEvent(item, sourceId));
+    const event = data.events.find((item) => matchesSource(item, sourceId));
     if (event) {
       setSelectedEventId(event.event_id);
-      document
-        .getElementById("timeline")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setTab("evidence");
     }
   };
+  const selectEvent = (id: string) => {
+    setSelectedEventId(id);
+    setTab("evidence");
+  };
+
   const runInvestigation = async () => {
     setInvestigationStatus("running");
     if (mode === "demo") {
@@ -1323,6 +965,7 @@ function Dashboard({
       setInvestigationStatus("failed");
     }
   };
+
   const advanceResponse = async () => {
     if (mode === "api") {
       if (responsePending.current) return;
@@ -1344,9 +987,7 @@ function Dashboard({
           const verification = await verifyResponseAction(responseAction);
           setResponseState(verification.status);
           setResponseAction((current) =>
-            current
-              ? { ...current, status: verification.status, verification }
-              : current,
+            current ? { ...current, status: verification.status, verification } : current,
           );
         }
       } catch (caught) {
@@ -1361,174 +1002,120 @@ function Dashboard({
       return;
     }
     if (responseState === "proposed") setResponseState("awaiting_approval");
-    else if (responseState === "awaiting_approval")
-      setResponseState("approved");
+    else if (responseState === "awaiting_approval") setResponseState("approved");
     else if (responseState === "approved") {
       setResponseState("executing");
       window.setTimeout(() => setResponseState("succeeded"), 900);
     } else if (responseState === "succeeded") setResponseState("verified");
   };
+
+  const tabs: Array<{ key: PanelTab; label: string; note?: string }> = [
+    { key: "evidence", label: "Evidence" },
+    { key: "entities", label: "Entities", note: String(data.entities.length) },
+    {
+      key: "report",
+      label: "Report",
+      note: investigationStatus === "completed" ? "Ready" : undefined,
+    },
+    {
+      key: "response",
+      label: "Response",
+      note:
+        responseState === "verified"
+          ? "Verified"
+          : responseState === "proposed"
+            ? undefined
+            : "In progress",
+    },
+  ];
+
   return (
-    <>
-      <main className="main-content">
-        <SourceBanner mode={mode} error={sourceError} onDemo={onDemo} />
-        <div className="case-header" id="overview">
-          <div className="case-header__top">
-            <div className="case-identity">
-              <span className="eyebrow">
-                Case file <span className="eyebrow-separator">/</span>{" "}
-                {data.incident.incident_id}
-              </span>
-              <h1>{data.incident.title}</h1>
-              <p>
-                Review the stored evidence, findings, and simulated response for this incident.
-              </p>
-            </div>
-            <div className="case-header__actions">
-              <button
-                className="button button--primary button--small"
-                onClick={() =>
-                  document
-                    .getElementById("response")
-                    ?.scrollIntoView({ behavior: "smooth" })
-                }
-              >
-                <ShieldAlert size={14} /> Review response
-              </button>
-            </div>
-          </div>
-          <div className="case-header__meta">
-            <StatusPill tone="amber" dot>
-              {humanize(data.incident.status)}
-            </StatusPill>
-            <StatusPill tone="red">
-              {humanize(data.incident.severity)} severity
-            </StatusPill>
-            <span>
-              <Clock3 size={14} /> {formatTime(data.incident.observed_start)} —{" "}
-              {formatTime(data.incident.observed_end)} UTC
-            </span>
-            <span>
-              <Database size={14} /> {data.incident.tenant_id} tenant
-            </span>
-            <span className="case-header__confidence">
-              <span className="confidence-ring">
-                {data.incident.confidence.slice(0, 2).toUpperCase()}
-              </span>{" "}
-              confidence category:{" "}
-              {data.incident.confidence}
-            </span>
-          </div>
-        </div>
-        <div className="summary-strip">
-          <div>
-            <span className="summary-strip__value">{data.events.length}</span>
-            <span className="summary-strip__label">
-              linked evidence records
-            </span>
-          </div>
-          <div>
-            <span className="summary-strip__value">{data.findings.length}</span>
-            <span className="summary-strip__label">deterministic findings</span>
-          </div>
-          <div>
-            <span className="summary-strip__value">{data.entities.length}</span>
-            <span className="summary-strip__label">bounded entities</span>
-          </div>
-          <div>
-            <span className="summary-strip__value summary-strip__value--amber">
-              {responseAction || (mode === "demo" && responseState !== "proposed") ? 1 : 0}
-            </span>
-            <span className="summary-strip__label">current response proposal</span>
-          </div>
-          <div className="summary-strip__end">
-            <span className="summary-strip__live">
-              <span /> evidence boundary intact
-            </span>
-          </div>
-        </div>
-        <div className="overview-grid">
-          <FindingsPanel data={data} onEvidence={openEvidence} />
-          <div className="triage-note panel">
-            <div className="triage-note__head">
-              <span className="section-heading__eyebrow">
-                Analyst orientation
-              </span>
-              <Eye size={17} />
-            </div>
-            <h3>Known, inferred, missing</h3>
-            <div className="orientation-row">
-              <span className="orientation-dot orientation-dot--cyan" />
-              <div>
-                <strong>Observed</strong>
-                <span>Directly represented by stored event data.</span>
-              </div>
-            </div>
-            <div className="orientation-row">
-              <span className="orientation-dot orientation-dot--amber" />
-              <div>
-                <strong>Inferred</strong>
-                <span>Derived from multiple related records.</span>
-              </div>
-            </div>
-            <div className="orientation-row">
-              <span className="orientation-dot orientation-dot--muted" />
-              <div>
-                <strong>Missing</strong>
-                <span>No identity confirmation or endpoint memory.</span>
-              </div>
-            </div>
-            <div className="triage-note__footer">
-              <Crosshair size={14} /> {data.incident.correlation_key}
-            </div>
-          </div>
-        </div>
-        <div className="timeline-layout">
+    <main className="page">
+      {sourceError && <ErrorBanner error={sourceError} onDemo={onDemo} />}
+      <CaseHead
+        data={data}
+        onReview={() => {
+          setTab("response");
+          document
+            .getElementById("inspector-panel")
+            ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }}
+      />
+      <div className="workspace">
+        <div className="narrative">
+          <Signals
+            data={data}
+            focusId={focusId}
+            onFocus={setFocusId}
+            onEvidence={openEvidence}
+          />
           <Timeline
             data={data}
             selectedId={selectedEvent?.event_id ?? ""}
-            onSelect={setSelectedEventId}
+            citedIds={citedIds}
+            onSelect={selectEvent}
           />
-          <EvidenceDetail event={selectedEvent} />
         </div>
-        <RelationshipPanel
-          data={data}
-          selectedEntityId={selectedEntityId}
-          onSelect={setSelectedEntityId}
-          onEvidence={openEvidence}
-        />
-        <ReportPanel
-          data={data}
-          status={investigationStatus}
-          onRun={runInvestigation}
-          onEvidence={openEvidence}
-        />
-        <ResponsePanel
-          data={data}
-          state={responseState}
-          error={responseError}
-          busy={responseBusy}
-          onAdvance={advanceResponse}
-        />
-        <footer className="page-footer">
-          <span>
-            <Radar size={14} /> TraceSOC analyst workspace
-          </span>
-          <span>Scenario primary-v1 · source-backed UI</span>
-          <span>Updated {formatTime(data.incident.updated_at)} UTC</span>
-        </footer>
-      </main>
-      <IncidentRail
-        incidents={incidents}
-        data={data}
-        selectedId={selectedId}
-        onSelect={onSelect}
-        search={search}
-        setSearch={setSearch}
-      />
-    </>
+        <aside className="inspector" aria-label="Inspector">
+          <div className="tabs" role="tablist" aria-label="Inspector sections">
+            {tabs.map((item) => (
+              <button
+                key={item.key}
+                role="tab"
+                id={`tab-${item.key}`}
+                aria-selected={tab === item.key}
+                aria-controls="inspector-panel"
+                onClick={() => setTab(item.key)}
+              >
+                {item.label}
+                {item.note && <small>{item.note}</small>}
+              </button>
+            ))}
+          </div>
+          <div
+            className="inspector__body"
+            role="tabpanel"
+            id="inspector-panel"
+            aria-labelledby={`tab-${tab}`}
+          >
+            {tab === "evidence" && <EvidencePanel event={selectedEvent} />}
+            {tab === "entities" && (
+              <EntitiesPanel
+                data={data}
+                selectedEntityId={selectedEntityId}
+                onSelect={setSelectedEntityId}
+                onEvidence={openEvidence}
+              />
+            )}
+            {tab === "report" && (
+              <ReportPanel
+                data={data}
+                status={investigationStatus}
+                onRun={runInvestigation}
+                onEvidence={openEvidence}
+              />
+            )}
+            {tab === "response" && (
+              <ResponsePanel
+                data={data}
+                state={responseState}
+                error={responseError}
+                busy={responseBusy}
+                onAdvance={advanceResponse}
+              />
+            )}
+          </div>
+        </aside>
+      </div>
+      <footer className="page-footer">
+        <span>Scenario primary-v1</span>
+        <span>Updated {formatTime(data.incident.updated_at)} UTC</span>
+      </footer>
+    </main>
   );
 }
+
+/* ------------------------------------------------------------------- root */
 
 export default function HomePage() {
   const [mode, setMode] = useState<DataMode>(getDataMode());
@@ -1536,7 +1123,6 @@ export default function HomePage() {
   const [data, setData] = useState<IncidentData | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [selectedId, setSelectedId] = useState(INCIDENT_ID);
-  const [search, setSearch] = useState("");
   const [error, setError] = useState("");
 
   const loadWorkspace = async () => {
@@ -1577,9 +1163,7 @@ export default function HomePage() {
       setLoadState("ready");
     } catch (caught) {
       setError(
-        caught instanceof Error
-          ? caught.message
-          : "Incident detail could not be loaded",
+        caught instanceof Error ? caught.message : "Incident detail could not be loaded",
       );
       setLoadState("error");
     }
@@ -1594,9 +1178,24 @@ export default function HomePage() {
     setLoadState("ready");
   };
 
+  const demoButton = (
+    <button className="button button--primary" onClick={useDemo}>
+      Open offline fixture
+    </button>
+  );
+
   return (
     <AppShell
       mode={mode}
+      switcher={
+        incidents.length > 0 && (
+          <CaseSwitcher
+            incidents={incidents}
+            selectedId={selectedId}
+            onSelect={(id) => void selectIncident(id)}
+          />
+        )
+      }
       onModeChange={
         mode === "demo"
           ? () =>
@@ -1608,25 +1207,38 @@ export default function HomePage() {
     >
       {loadState === "loading" ? (
         <LoadingScreen />
-      ) : loadState === "empty" ? (
-        <EmptyState onDemo={useDemo} />
       ) : loadState === "error" ? (
-        <ErrorState error={error} onDemo={useDemo} />
-      ) : data ? (
+        <Notice
+          icon={<WifiOff size={22} />}
+          title="TraceSOC could not load the case"
+          actions={
+            <>
+              {demoButton}
+              <button
+                className="button button--quiet"
+                onClick={() => window.location.reload()}
+              >
+                <RefreshCw size={15} aria-hidden="true" /> Retry
+              </button>
+            </>
+          }
+        >
+          {error}. Check the API address and CORS settings, or continue with the offline
+          fixture.
+        </Notice>
+      ) : loadState === "ready" && data ? (
         <Dashboard
           data={data}
-          incidents={incidents}
           mode={mode}
-          selectedId={selectedId}
-          onSelect={(id) => void selectIncident(id)}
-          search={search}
-          setSearch={setSearch}
           onDemo={useDemo}
           sourceError={mode === "api" ? error : undefined}
           setData={(nextData) => setData(nextData)}
         />
       ) : (
-        <EmptyState onDemo={useDemo} />
+        <Notice icon={<Activity size={22} />} title="No incidents yet" actions={demoButton}>
+          The API returned no incidents for this workspace. Ingest events, or open the
+          offline fixture to walk through a case.
+        </Notice>
       )}
     </AppShell>
   );
