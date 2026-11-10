@@ -1,0 +1,1 @@
+{"source_event_id":"BENIGN-001","source_type":"authentication","event_type":"login_success","event_time":"2026-10-15T12:00:00-04:00","username":"alice","source_ip":"198.51.100.10","outcome":"success"}
